@@ -1,0 +1,3602 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building the Transformer from Scratch</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Source+Sans+3:wght@400;600;700&family=Space+Grotesk:wght@400;600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Libraries -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- MathJax Config -->
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['\\(', '\\)']],
+                displayMath: [['$$', '$$']],
+            },
+            svg: {
+                fontCache: 'global'
+            },
+            startup: {
+                pageReady: () => {
+                    return MathJax.startup.defaultPageReady();
+                }
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+    <style>
+        :root {
+            /* Palette: Deep Space & Neon Glass */
+            --bg-deep: #030508;
+            --bg-gradient: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+
+            /* Glass Layers */
+            --glass-surface: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.15);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.36);
+
+            /* Text */
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --text-glow: 0 0 20px rgba(255, 255, 255, 0.1);
+
+            /* Accents with Glows */
+            --accent-blue: #38bdf8;
+            --glow-blue: 0 0 20px rgba(56, 189, 248, 0.4);
+
+            --accent-purple: #c084fc;
+            --glow-purple: 0 0 20px rgba(192, 132, 252, 0.4);
+
+            --accent-amber: #fbbf24;
+            --glow-amber: 0 0 20px rgba(251, 191, 36, 0.4);
+
+            --accent-green: #34d399;
+            --glow-green: 0 0 20px rgba(52, 211, 153, 0.4);
+
+            --accent-red: #f87171;
+            --accent-code: #f472b6;
+
+            /* Compatibility / Layout Colors */
+            --bg-surface: rgba(255, 255, 255, 0.05);
+            --bg-elevated: rgba(255, 255, 255, 0.1);
+
+            /* Typography */
+            --font-display: 'Space Grotesk', system-ui, sans-serif;
+            --font-body: 'Source Sans 3', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            /* Spacing */
+            --slide-padding: 80px 100px;
+        }
+
+        /* --- Global Reset & Body --- */
+        * {
+            box-sizing: border-box;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: var(--font-body);
+            color: var(--text-primary);
+            background: var(--bg-deep);
+        }
+
+        /* Animated Mesh Background */
+        body::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background:
+                radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 80% 20%, rgba(192, 132, 252, 0.08) 0%, transparent 30%);
+            animation: drift 60s infinite linear;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @keyframes drift {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* --- App Container --- */
+        #app {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* --- Slide Container --- */
+        .slide-viewer {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            perspective: 1000px;
+        }
+
+        .slide-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: flex;
+            opacity: 0;
+            transform: scale(0.98) translateY(10px);
+            transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .slide-container.active {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            pointer-events: all;
+        }
+
+        .slide-content {
+            width: 100%;
+            height: 100%;
+            padding: var(--slide-padding);
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- Typography --- */
+        h1,
+        h2,
+        h3 {
+            font-family: var(--font-display);
+            margin: 0 0 1.5rem 0;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+        }
+
+        h1 {
+            font-size: 5.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, white 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.1));
+        }
+
+        h2 {
+            font-size: 3.5rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            text-shadow: var(--glow-blue);
+        }
+
+        h3 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        p,
+        li {
+            font-size: 1.6rem;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            max-width: 65ch;
+        }
+
+        strong {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        /* --- Code Blocks (Glass Terminal) --- */
+        pre {
+            background: rgba(0, 0, 0, 0.4) !important;
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            margin: 2rem 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Terminal Header */
+        pre::before {
+            content: '● ● ●';
+            position: absolute;
+            top: 12px;
+            left: 16px;
+            font-size: 10px;
+            color: var(--text-muted);
+            letter-spacing: 4px;
+        }
+
+        pre code {
+            font-family: var(--font-mono);
+            padding: 3rem 1.5rem 1.5rem 1.5rem !important;
+            font-size: 1.1rem;
+            background: transparent !important;
+        }
+
+        code {
+            font-family: var(--font-mono);
+            color: var(--accent-purple);
+            background: rgba(192, 132, 252, 0.1);
+            padding: 0.2em 0.4em;
+            border-radius: 6px;
+            font-size: 0.9em;
+            border: 1px solid rgba(192, 132, 252, 0.2);
+        }
+
+        /* --- Layouts --- */
+
+        /* Title Slide */
+        .layout-title-slide {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: radial-gradient(circle at center, rgba(56, 189, 248, 0.05) 0%, transparent 60%);
+        }
+
+        .layout-title-slide h1 {
+            font-size: 6.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .layout-title-slide h2 {
+            font-size: 2.2rem;
+            color: var(--text-secondary);
+            text-shadow: none;
+            -webkit-text-fill-color: var(--text-secondary);
+            font-weight: 400;
+            margin-bottom: 4rem;
+        }
+
+        .layout-title-slide .footer {
+            position: absolute;
+            bottom: 40px;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            opacity: 0.6;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Grid Layouts */
+        .layout-split {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5rem;
+            height: 100%;
+            align-items: center;
+        }
+
+        .col-visual {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: var(--glass-surface);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+            transition: transform 0.4s ease;
+        }
+
+        .simulation-container {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+        }
+
+        .col-visual:hover {
+            transform: translateY(-5px);
+            border-color: var(--glass-highlight);
+            box-shadow: 0 35px 60px -15px rgba(0, 0, 0, 0.6), 0 0 30px rgba(56, 189, 248, 0.1);
+        }
+
+        .col-visual img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            /* Changed from cover to contain to see full diagrams */
+            padding: 2rem;
+        }
+
+        /* Section Break */
+        .layout-section-break {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: linear-gradient(45deg, rgba(56, 189, 248, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+        }
+
+        /* Missing Layouts */
+        .col-text {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .ratio-40-60 {
+            grid-template-columns: 0.8fr 1.2fr;
+        }
+
+        .ratio-55-45 {
+            grid-template-columns: 1.1fr 0.9fr;
+        }
+
+        .slide-bg-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            opacity: 0.2;
+            z-index: 0;
+            pointer-events: none;
+            mix-blend-mode: luminosity;
+        }
+
+        .layout-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1px 1fr;
+            gap: 2rem;
+            height: 100%;
+            width: 100%;
+        }
+
+        .col-compare {
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .divider {
+            background: var(--glass-border);
+            height: 80%;
+            align-self: center;
+            width: 1px;
+        }
+
+        .layout-section-break h1 {
+            font-size: 5rem;
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            -webkit-text-fill-color: var(--accent-blue);
+        }
+
+        /* --- UI Elements --- */
+        .progress-bg {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            z-index: 100;
+        }
+
+        .progress-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 6px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            box-shadow: 0 0 15px var(--accent-blue);
+            transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 101;
+        }
+
+        .slide-counter {
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--glass-border);
+            z-index: 100;
+        }
+
+        /* --- Utilities --- */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Speaker Notes Panel (Modernized) */
+        .notes-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 35vh;
+            background: rgba(10, 10, 15, 0.95);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid var(--accent-blue);
+            padding: 3rem;
+            transform: translateY(110%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 200;
+            box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .notes-panel.visible {
+            transform: translateY(0);
+        }
+
+        .notes-title {
+            color: var(--accent-blue);
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #notes-content {
+            font-size: 1.4rem;
+            color: #e2e8f0;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Overview Grid */
+        .overview-grid {
+            background: rgba(3, 5, 8, 0.9);
+            backdrop-filter: blur(20px);
+        }
+
+        .overview-thumb {
+            aspect-ratio: 16/9;
+            background: var(--bg-surface);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .overview-thumb:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+            transform: scale(1.02);
+        }
+
+        .thumb-num {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            margin-bottom: 8px;
+        }
+
+        .thumb-title {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .overview-grid.active {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 40px;
+            align-content: start;
+            animation: fadeIn 0.3s ease;
+        }
+
+        /* --- Premium Button Styling --- */
+        button,
+        .btn {
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(192, 132, 252, 0.2));
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover,
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(56, 189, 248, 0.3);
+            border-color: var(--accent-blue);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.4), rgba(192, 132, 252, 0.3));
+        }
+
+        button:active,
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 10px rgba(56, 189, 248, 0.2);
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        button:hover::before {
+            left: 100%;
+        }
+
+        /* --- Modal & Overlay Styling --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            z-index: 500;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 60px rgba(56, 189, 248, 0.1);
+            min-width: 300px;
+            text-align: center;
+        }
+
+        .modal-content h3 {
+            margin: 0 0 1rem 0;
+            color: var(--accent-blue);
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 2rem;
+            font-family: var(--font-mono);
+            text-align: center;
+            background: var(--bg-surface);
+            border: 2px solid var(--accent-blue);
+            border-radius: 8px;
+            color: white;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .modal-input:focus {
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+            border-color: var(--accent-purple);
+        }
+
+        /* --- Full Simulation Layout --- */
+        .layout-full-simulation {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .layout-full-simulation .overlay-title {
+            position: absolute;
+            top: 20px;
+            left: 30px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            padding: 12px 25px;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .layout-full-simulation .overlay-title h2 {
+            margin: 0;
+            font-size: 1.6rem;
+        }
+
+        .layout-full-simulation .simulation-container {
+            width: 100%;
+            height: 100%;
+            padding: 80px 20px 20px;
+        }
+
+        /* --- Enhanced Section Break --- */
+        .layout-section-break {
+            background:
+                radial-gradient(ellipse at 30% 50%, rgba(56, 189, 248, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 50%, rgba(192, 132, 252, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.05) 0%, transparent 40%);
+            animation: sectionPulse 6s ease-in-out infinite;
+        }
+
+        @keyframes sectionPulse {
+
+            0%,
+            100% {
+                background-size: 100% 100%, 100% 100%, 100% 100%;
+            }
+
+            50% {
+                background-size: 120% 120%, 120% 120%, 110% 110%;
+            }
+        }
+
+        .layout-section-break h1 {
+            font-size: 7rem !important;
+            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 50%, var(--accent-amber) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 50px rgba(56, 189, 248, 0.5));
+            animation: titleGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes titleGlow {
+
+            0%,
+            100% {
+                filter: drop-shadow(0 0 50px rgba(56, 189, 248, 0.5));
+            }
+
+            50% {
+                filter: drop-shadow(0 0 70px rgba(192, 132, 252, 0.6));
+            }
+        }
+
+        .layout-section-break h2 {
+            font-size: 2rem;
+            color: var(--text-primary) !important;
+            -webkit-text-fill-color: var(--text-primary);
+            text-shadow: none;
+            margin-bottom: 1rem;
+        }
+
+        .layout-section-break p {
+            max-width: 600px;
+            text-align: center;
+        }
+
+        /* --- Animation Keyframes --- */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes scaleIn {
+            from {
+                opacity: 0;
+                transform: scale(0.92);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        /* --- Slide Content Animations --- */
+        .slide-content h1 {
+            animation: slideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .slide-content h2 {
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+            opacity: 0;
+        }
+
+        .slide-content .col-text {
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+            opacity: 0;
+        }
+
+        .slide-content .col-visual {
+            animation: scaleIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards;
+            opacity: 0;
+        }
+
+        .slide-content ul,
+        .slide-content p {
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+            opacity: 0;
+        }
+
+        /* --- Simulation Container Styling --- */
+        .simulation-container {
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        /* --- Enhanced List Items --- */
+        .slide-content li {
+            position: relative;
+            padding-left: 1.5rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .slide-content li::before {
+            content: '▸';
+            position: absolute;
+            left: 0;
+            color: var(--accent-blue);
+            font-weight: bold;
+        }
+
+        /* --- Input & Range Styling --- */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--bg-elevated);
+            border-radius: 3px;
+            outline: none;
+            margin: 10px 0;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.7);
+        }
+
+        input[type="text"],
+        textarea {
+            background: var(--bg-surface);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            color: white;
+            font-family: var(--font-body);
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+            outline: none;
+        }
+
+        /* --- Title Slide Enhancements --- */
+        .layout-title-slide {
+            background:
+                radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(192, 132, 252, 0.06) 0%, transparent 40%),
+                radial-gradient(circle at 70% 80%, rgba(251, 191, 36, 0.04) 0%, transparent 30%);
+        }
+
+        .layout-title-slide h1 {
+            font-size: 5.5rem;
+            margin-bottom: 1.5rem;
+            animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .layout-title-slide h2 {
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+            opacity: 0;
+        }
+
+        .layout-title-slide .footer {
+            animation: fadeIn 0.5s ease 0.5s forwards;
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="debug-overlay"
+        style="position:fixed; top:0; left:0; width:100%; z-index:9999; background:rgba(0,0,0,0.8); color:red; padding:20px; font-family:monospace; display:none;">
+        <h3>Debug Log</h3>
+        <ul id="debug-errors"></ul>
+        <button onclick="document.getElementById('debug-overlay').style.display='none'"
+            style="margin-top:10px;">Close</button>
+    </div>
+    <script>
+        window.onerror = function (message, source, lineno, colno, error) {
+            const overlay = document.getElementById('debug-overlay');
+            const list = document.getElementById('debug-errors');
+            overlay.style.display = 'block';
+            const li = document.createElement('li');
+            li.innerText = `Error: ${message} at ${source}:${lineno}:${colno}`;
+            list.appendChild(li);
+            console.error(message, source, lineno, colno, error);
+            // Don't swallow the error
+            return false;
+        };
+        console.log("Debug overlay initialized");
+    </script>
+
+    <div id="app">
+        <!-- Slides will be rendered here -->
+        <div id="slide-viewer" class="slide-viewer">
+            <div
+                style="display:flex;justify-content:center;align-items:center;height:100%;font-size:2rem;color:var(--text-secondary);">
+                Loading Presentation...<br>
+                <span style="font-size:1rem;margin-top:1rem;">(If this persists, check console or debug log)</span>
+            </div>
+        </div>
+
+        <!-- UI Overlays -->
+        <div class="progress-bg" id="progress-bg"></div>
+        <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+        <div class="slide-counter" id="slide-counter">1 / 10</div>
+
+        <!-- Speaker Notes -->
+        <div class="notes-panel" id="notes-panel">
+            <div class="notes-title">Speaker Notes</div>
+            <div id="notes-content"></div>
+        </div>
+
+        <!-- Go To Slide Modal -->
+        <div class="modal-overlay" id="goto-modal">
+            <div class="modal-content">
+                <h3>Go to Slide</h3>
+                <input type="number" id="goto-input" class="modal-input" placeholder="#" min="1">
+            </div>
+        </div>
+
+        <!-- Overview Mode -->
+        <div class="overview-grid" id="overview-grid"></div>
+    </div>
+
+    <script>
+        // --- Data Definitions ---
+        const SLIDES = [
+            // --- ACT 1 ---
+            {
+                id: 1,
+                layout: 'title-slide',
+                title: "Building the Transformer from Scratch",
+                subtitle: "From Ancient Statistics to Modern AI",
+                footer: "Applied AI Meetup Hackathon",
+                image: "images/slide_01_title.png",
+                notes: "Welcome everyone. The modern AI you interact with daily — ChatGPT, Claude, all of these systems — didn't just pop out of nowhere. They're the culmination of centuries of humans trying to answer one fundamental question: Can we predict the future from patterns in the past?"
+            },
+            {
+                id: 2,
+                layout: 'content-image',
+                title: "Humanity's Oldest Obsession: Counting Things",
+                content: `
+                    <ul>
+                        <li><strong>Romans:</strong> Census every 5 years ("lustrum") — family, property, wealth</li>
+                        <li><strong>China:</strong> Population registers from Xia Dynasty (~2000 BCE). Han Dynasty counted 57 million people in 2 CE</li>
+                        <li><strong>India:</strong> Chanakya's Arthashastra (~300 BCE) — demographic records</li>
+                        <li><strong>Purpose:</strong> Taxation, military conscription, food distribution</li>
+                    </ul>
+                    <p>All backward-looking — counting what existed, not predicting what would come.</p>
+                `,
+                image: "images/slide_02_ancient_data.png",
+                notes: "For most of history, data was about record-keeping. The Romans, Chinese, and Indians built massive bureaucracies just to count what they had. This was 'descriptive statistics' before the term existed. It was backward-looking."
+            },
+            {
+                id: 3,
+                layout: 'content-image',
+                title: "Fun Fact: The First Computer Was Built for the Census",
+                content: `
+                    <ul>
+                        <li><strong>1880 US Census:</strong> took 8 years to process manually</li>
+                        <li><strong>Herman Hollerith:</strong> Invented electromechanical tabulating machine (punch cards)</li>
+                        <li><strong>1890 Census:</strong> Processed 62 million people in ~1 year</li>
+                        <li><strong>Legacy:</strong> Hollerith's company → CTR → renamed 1924 → <strong>IBM</strong></li>
+                    </ul>
+                    <p>Modern computing has its roots in the humble census.</p>
+                `,
+                image: "images/slide_03_hollerith.png",
+                notes: "In 1880, the US census took 8 years to count. They barely finished before the next one started. Herman Hollerith invented a machine using punch cards—inspired by train conductor tickets—to tabulate data. He founded a company that eventually became IBM. The lineage of AI stats helps."
+            },
+            {
+                id: 4,
+                layout: 'content-simulation',
+                title: "Making Sense of Data: The Statistical Toolkit",
+                content: `
+                    <ul>
+                        <li><strong>1662 John Graunt:</strong> First life tables from London death records</li>
+                        <li><strong>1713 Jakob Bernoulli:</strong> Law of Large Numbers</li>
+                        <li><strong>De Moivre / Gauss:</strong> Normal distribution (bell curve)</li>
+                        <li><strong>Bayes:</strong> Updating beliefs with evidence</li>
+                    </ul>
+                    <p>The foundations of how we train neural nets (Least Squares) date back to Gauss.</p>
+                `,
+                simulation: 'sim-1',
+                notes: "As we collected more data, we needed math to understand it. Bernoulli gave us the Law of Large Numbers—the idea that more data equals closer to truth. Gauss gave us the bell curve and least squares regression, which is still how we calculate loss in neural networks today."
+            },
+            {
+                id: 5,
+                layout: 'content-image',
+                title: "Probability Theory: Born at the Gambling Table",
+                content: `
+                    <ul>
+                        <li><strong>1654:</strong> Chevalier de Méré asks Pascal about dice odds</li>
+                        <li><strong>Pascal ↔ Fermat:</strong> Correspondence lays foundations of probability</li>
+                        <li><strong>Laplace:</strong> "Common sense reduced to calculation"</li>
+                        <li><strong>Key Assumption:</strong> Independence (Dice have no memory)</li>
+                    </ul>
+                    <p>But what about language? Does the next word depend on the previous one?</p>
+                `,
+                image: "images/slide_05_pascal_dice.png",
+                notes: "Probability didn't come from science, it came from gambling. Pascal and Fermat worked out the math of dice. But they assumed events were independent. A die doesn't remember the last roll. But language is different. 'Queen' is much more likely after 'King' than after 'Sandwich'."
+            },
+            {
+                id: 6,
+                layout: 'content-image',
+                title: "1913: A Theological Argument Changes Mathematics",
+                content: `
+                    <ul>
+                        <li><strong>Pavel Nekrasov (Theologian):</strong> Claimed Law of Large Numbers <em>requires</em> independence. Independence = Free Will.</li>
+                        <li><strong>Andrey Markov (Mathematician):</strong> "Nonsense."</li>
+                        <li><strong>Markov's Goal:</strong> Prove LLN holds even for dependent events.</li>
+                    </ul>
+                    <p>He didn't argue philosophically. He calculated.</p>
+                `,
+                image: "images/slide_06_markov_nekrasov.png",
+                notes: "In 1913, a theologian named Nekrasov argued that because the Law of Large Numbers requires independence, humans must have free will (independence). Andrey Markov, a grumpy mathematician, hated this. He set out to prove that you can have dependent events that still follow statistical laws."
+            },
+            {
+                id: 7,
+                layout: 'content-simulation',
+                title: "Markov Analyzes Eugene Onegin",
+                content: `
+                    <p>Markov analyzed 20,000 characters of Pushkin's <em>Eugene Onegin</em>.</p>
+                    <p>He classified letters as Vowel (V) or Consonant (C).</p>
+                    <ul>
+                        <li><strong>Finding:</strong> Consonants are much more likely after Vowels.</li>
+                        <li><strong>Conclusion:</strong> Events are <em>dependent</em>, yet proportions stabilize.</li>
+                        <li>Nekrasov was wrong. Dependence exists. Patterns exist.</li>
+                    </ul>
+                `,
+                simulation: 'sim-2',
+                notes: "Markov manually counted 20,000 letters of 'Eugene Onegin'. He showed that after a vowel, a consonant is likely. After a consonant, a vowel is likely. They are dependent. But the overall statistics still work. This was the birth of the Markov Chain."
+            },
+            {
+                id: 8,
+                layout: 'full-simulation',
+                title: "Markov Chains: Predicting the Next State",
+                simulation: 'sim-3',
+                notes: "This is a Markov Chain. It predicts the next state based ONLY on the current state. This is the great-grandfather of ChatGPT. It's next-token prediction, but with a context window of size 1."
+            },
+
+            // --- ACT 2 ---
+            {
+                id: 9,
+                layout: 'section-break',
+                title: "ACT II",
+                subtitle: "From Markov Chains to Transformers",
+                description: "Each solution unlocked new capabilities but revealed new limitations. Each limitation drove the next innovation."
+            },
+            {
+                id: 10,
+                layout: 'content-simulation',
+                title: "1958: The Perceptron — Learning from Data",
+                content: `
+                    <ul>
+                        <li><strong>1943:</strong> McCulloch & Pitts model a neuron</li>
+                        <li><strong>1958:</strong> Frank Rosenblatt invents the Perceptron</li>
+                        <li><strong>Mechanism:</strong> Weighted inputs → Sum → Threshold → Output</li>
+                        <li><strong>Hype:</strong> NYT claimed it would "walk, talk, see, write, reproduces itself"</li>
+                    </ul>
+                `,
+                simulation: 'sim-4',
+                notes: "In 1958, Rosenblatt built the Perceptron. It was a hardware device with 400 photocells. It could learn to classify simple shapes. The hype was insane—the New York Times said it would eventually talk, see, and reproduce itself. They were right, it just took 65 years."
+            },
+            {
+                id: 11,
+                layout: 'content-simulation',
+                title: "1969: The XOR Problem Kills Neural Networks",
+                content: `
+                    <p>Minsky & Papert proved a single-layer perceptron cannot solve <strong>XOR</strong>.</p>
+                    <ul>
+                        <li>Linear separation works for AND/OR, but not XOR.</li>
+                        <li>We needed hidden layers, but didn't know how to train them.</li>
+                        <li><strong>Result:</strong> First AI Winter. Funding vanished.</li>
+                    </ul>
+                `,
+                simulation: 'sim-5',
+                notes: "Then came Minsky and Papert. They proved mathematically that a single perceptron couldn't solve the XOR problem. It couldn't separate two classes that weren't linearly separable. This killed funding for neural nets for a decade. The first AI Winter."
+            },
+            {
+                id: 12,
+                layout: 'full-simulation',
+                title: "1986: Backpropagation — The Breakthrough",
+                simulation: 'sim-6',
+                notes: "In 1986, Hinton, Rumelhart, and Williams popularized Backpropagation. It gave us a way to train deep networks. You calculate the error at the output, and propagate it backward to update the weights. The Chain Rule in action."
+            },
+            {
+                id: 13,
+                layout: 'content-simulation',
+                title: "The Vanishing Gradient Problem",
+                content: `
+                    <p>Backprop enabled depth, but only up to a point.</p>
+                    <ul>
+                        <li>Gradients multiply through layers (Chain Rule).</li>
+                        <li>If weights/activations are small (< 1), gradients shrink exponentially.</li>
+                        <li><strong>Result:</strong> Early layers stop learning.</li>
+                        <li><strong>Solutions:</strong> ReLU, Residual Connections, BatchNorm.</li>
+                    </ul>
+                `,
+                simulation: 'sim-7',
+                notes: "But deep networks were hard to train. As you go back many layers, the gradient signal gets multiplied by small numbers over and over. It vanishes. The early layers—which should learn basic features—never get the signal to change."
+            },
+            {
+                id: 14,
+                layout: 'content-simulation',
+                title: "Recurrent Neural Networks: Memory at a Cost",
+                content: `
+                    <p><strong>Idea:</strong> Use a hidden state that loops back as memory.</p>
+                    <ul>
+                        <li>great for sequences (time series, language).</li>
+                        <li><strong>Problem:</strong> Vanishing gradient <em>through time</em>.</li>
+                        <li>Can only remember recent history. "The cat..." (100 words later) "...sat?"</li>
+                    </ul>
+                `,
+                simulation: 'sim-8',
+                notes: "For language, we used Recurrent Neural Networks (RNNs). They have a loop. They pass a hidden state from word to word. This implies memory. But the vanishing gradient strikes again—this time through time. An RNN forgets the beginning of the sentence by the time it reaches the end."
+            },
+            {
+                id: 15,
+                layout: 'content-image',
+                title: "1997: LSTMs — Learning What to Remember",
+                content: `
+                     <p>Hochreiter & Schmidhuber (1997) proposed <strong>L</strong>ong <strong>S</strong>hort-<strong>T</strong>erm <strong>M</strong>emory.</p>
+                     <ul>
+                         <li><strong>Gating Mechanism:</strong> Forget Gate, Input Gate, Output Gate.</li>
+                         <li>Allows gradients to flow unchanged through the "cell state".</li>
+                         <li>Dominated NLP for 20 years (Translation, Speech).</li>
+                         <li><strong>Limitation:</strong> Still sequential. Hard to parallelize.</li>
+                     </ul>
+                `,
+                image: "images/slide_14_lstm_gates.png",
+                notes: "LSTMs fixed the memory problem with gates—valves that control information flow. They could remember things for longer. They powered Google Translate for years. But they were still sequential. You had to process word 1 before word 2."
+            },
+            {
+                id: 16,
+                layout: 'full-simulation',
+                title: "Representing Words: From One-Hot to Embeddings",
+                simulation: 'sim-9',
+                notes: "How do we even talk to computers? We used to use One-Hot encoding—big vectors of zeros. Now we use Embeddings. We represent words as vectors in a high-dimensional space. Words with similar meanings are close together."
+            },
+            {
+                id: 17,
+                layout: 'code-slide',
+                title: "Word2Vec: You Shall Know a Word by the Company It Keeps",
+                content: `
+                    <p><strong>J.R. Firth (1957):</strong> Meaning comes from context.</p>
+                    <ul>
+                        <li><strong>Skip-gram:</strong> Predict context from word.</li>
+                        <li><strong>CBOW:</strong> Predict word from context.</li>
+                        <li>Vector Arithmetic: <code>King - Man + Woman = Queen</code></li>
+                    </ul>
+                `,
+                code: `# Conceptual Word2Vec
+# Training objective: predict context from target word
+
+# "The cat sat on the mat"
+# Skip-gram pairs (window=2):
+#   (cat, The), (cat, sat), (cat, on)
+#   (sat, cat), (sat, on), (sat, the)
+
+# Result: embedding_matrix[vocab_size, 300]
+# king - man + woman ≈ queen
+embedding["king"] - embedding["man"] + embedding["woman"]
+# → closest vector: embedding["queen"]`,
+                notes: "Word2Vec showed us that we can learn these embeddings just by looking at which words appear near each other. King minus Man plus Woman equals Queen. Philosophy became geometry."
+            },
+            {
+                id: 18,
+                layout: 'content-simulation',
+                title: "2014: Attention — Learning Where to Focus",
+                content: `
+                    <p><strong>Bottleneck:</strong> Encoder compressed entire sentence into ONE vector.</p>
+                    <p><strong>Solution:</strong> Let Decoder look back at ALL source states.</p>
+                    <ul>
+                        <li>Dynamic weights: Focus on "cat" when generating "chat".</li>
+                        <li>Dramatically improved translation.</li>
+                        <li>Still attached to RNNs/LSTMs.</li>
+                    </ul>
+                `,
+                simulation: 'sim-10',
+                notes: "In 2014, the Attention mechanism was introduced for translation. Instead of forcing the model to remember the whole sentence in one vector, we let it 'look back' at the source sentence at every step. It could 'attend' to relevant words."
+            },
+            {
+                id: 19,
+                layout: 'content-image',
+                title: "2017: \"Attention Is All You Need\"",
+                content: `
+                    <p>Vaswani et al. (Google Brain) asked: <strong>Do we need the RNN at all?</strong></p>
+                    <ul>
+                        <li><strong>Self-Attention:</strong> Every token looks at every other token at once.</li>
+                        <li><strong>Parallelization:</strong> No sequential dependency!</li>
+                        <li><strong>Scalability:</strong> Bigger models, more data, faster training.</li>
+                    </ul>
+                `,
+                image: "images/slide_18_attention_paper.png",
+                notes: "Then in 2017, the paper dropped. 'Attention Is All You Need'. They threw away the RNN. No more loops. Just Attention. This meant we could process the whole sentence at once. Parallelization. This allowed us to train on the whole internet."
+            },
+
+            // --- ACT 3 ---
+            {
+                id: 20,
+                layout: 'section-break',
+                title: "ACT III",
+                subtitle: "Inside the Transformer",
+                description: "Let's open the hood and trace data through every component."
+            },
+            {
+                id: 21,
+                layout: 'content-simulation',
+                title: "Step 1: Tokenization — Text to Numbers",
+                content: `
+                    <p>Modern models use <strong>Subword Tokenization</strong> (BPE/WordPiece).</p>
+                    <ul>
+                        <li>Common words = 1 token (e.g., "apple")</li>
+                        <li>Rare words = multiple tokens (e.g., "un", "friend", "li", "ness")</li>
+                        <li>Vocabulary size: ~50,000 to 100,000 tokens.</li>
+                    </ul>
+                `,
+                simulation: 'sim-11',
+                notes: "Step 1: Tokenization. We don't feed text to the model. We feed numbers. We break words into chunks called tokens. Common words are one token; complex words are split up. 'Unbelievable' might become 'Un', 'believ', 'able'."
+            },
+            {
+                id: 22,
+                layout: 'full-simulation',
+                title: "Word Embeddings: Learning Meaning in Vector Space",
+                simulation: 'sim-embed-3d',
+                notes: "Each word becomes a point in high-dimensional space. During training, semantically similar words cluster together. Watch the relationship lines connecting similar concepts."
+            },
+            {
+                id: 23,
+                layout: 'content-simulation',
+                title: "Step 2: Embeddings — IDs to Vectors",
+                content: `
+                    <p>Look up the vector for each token ID.</p>
+                    <ul>
+                        <li>Matrix: <code>[vocab_size, d_model]</code></li>
+                        <li>Example: 50,000 × 512</li>
+                        <li>Learned during training.</li>
+                    </ul>
+                `,
+                simulation: 'sim-12',
+                notes: "Step 2: Embeddings. We look up the visual representation for each token ID. Now we have a list of vectors."
+            },
+            {
+                id: 23,
+                layout: 'content-simulation',
+                title: "Step 3: Positional Encoding — Where Am I?",
+                content: `
+                    <p>Self-attention is <em>permutation invariant</em>. It doesn't know order.</p>
+                    <p>We must inject position information.</p>
+                    <ul>
+                        <li><strong>Sinusoidal:</strong> Wave patterns of different frequencies.</li>
+                        <li><strong>Learned:</strong> The model learns position vectors.</li>
+                        <li>Added to the embedding: <code>Input = Embed + PosEnc</code></li>
+                    </ul>
+                `,
+                simulation: 'sim-13',
+                notes: "Step 3: Positional Encoding. Since the Transformer looks at everything at once, it doesn't know that 'cat' came before 'sat'. We have to add a signal—a positional encoding—to tell it the order."
+            },
+            {
+                id: 24,
+                layout: 'content-simulation',
+                title: "Step 4: Query, Key, Value — Three Views",
+                content: `
+                    <p>Each token vector is projected into 3 new vectors:</p>
+                    <ul>
+                        <li><strong>Query (Q):</strong> What am I looking for?</li>
+                        <li><strong>Key (K):</strong> What do I contain?</li>
+                        <li><strong>Value (V):</strong> What info do I pass along?</li>
+                    </ul>
+                    <p><code>d_model</code> (512) → <code>d_head</code> (64)</p>
+                `,
+                simulation: 'sim-14',
+                notes: "Step 4: Q, K, V. This is the magic. Each token turns into three vectors. The Query asks 'what am I looking for?'. The Key says 'here is what I describe'. The Value says 'here is my content'."
+            },
+            {
+                id: 25,
+                layout: 'full-simulation',
+                title: "Step 5: Self-Attention — The Heart",
+                simulation: 'sim-15',
+                notes: "Step 5: Self-Attention. We align the Queries with the Keys. If they match, we pay attention. Then we take the weighted sum of the Values. This is how 'it' knows to refer to 'the robot' and not 'the street'."
+            },
+            {
+                id: 26,
+                layout: 'content-simulation',
+                title: "Step 6: Multi-Head Attention",
+                content: `
+                    <p>We do this 8 (or more) times in parallel.</p>
+                    <ul>
+                        <li><strong>Head 1:</strong> Focuses on grammar (Subject-Verb)</li>
+                        <li><strong>Head 2:</strong> Focuses on pronouns (Co-reference)</li>
+                        <li><strong>Head 3:</strong> Focuses on nearby words</li>
+                    </ul>
+                    <p>Results are concatenated and projected back to <code>d_model</code>.</p>
+                `,
+                simulation: 'sim-16',
+                notes: "Step 6: Multi-Head. We don't just do this once. We do it 8 times, 12 times, 96 times in parallel. Each 'head' learns a different kind of relationship. Grammar, rhyme, logic, translation."
+            },
+            {
+                id: 27,
+                layout: 'content-simulation',
+                title: "Step 7: Feed-Forward Network",
+                content: `
+                    <p>Processed independently for each token.</p>
+                    <ul>
+                        <li>Expansion: 512 → 2048</li>
+                        <li><strong>ReLU/GELU:</strong> Non-linearity (The "thinking" happens here)</li>
+                        <li>Contraction: 2048 → 512</li>
+                    </ul>
+                    <p><em>Attention = Communication. FFN = Computation.</em></p>
+                `,
+                simulation: 'sim-17',
+                notes: "Step 7: The Feed Forwad Network. After the tokens talk to each other (attention), they need to think individually. This is a simple 2-layer neural net applied to each token separately."
+            },
+            {
+                id: 28,
+                layout: 'content-simulation',
+                title: "Step 8: Residuals & Normalization",
+                content: `
+                    <ul>
+                        <li><strong>Add:</strong> <code>x + Sublayer(x)</code> (The gradient highway)</li>
+                        <li><strong>Norm:</strong> Keeps activations stable (mean=0, std=1)</li>
+                    </ul>
+                    <p>Essential for training deep networks (GPT-4 has ~100+ layers).</p>
+                `,
+                simulation: 'sim-18',
+                notes: "Step 8: Residual Connections. We add the input back to the output. This creates a highway for gradients to flow all the way back to the start. This allows us to stack hundreds of layers without the vanishing gradient problem."
+            },
+            {
+                id: 29,
+                layout: 'full-simulation',
+                title: "One Complete Transformer Block",
+                simulation: 'sim-19',
+                notes: "That's one block. In reality, we stack N of these. BERT uses 12 or 24. GPT-3 uses 96."
+            },
+            {
+                id: 30,
+                layout: 'three-column',
+                title: "Three Transformer Architectures",
+                content_left: `
+                    <h3>Encoder-Only (BERT)</h3>
+                    <ul>
+                        <li>Bidirectional</li>
+                        <li>Sees all context</li>
+                        <li><strong>Use:</strong> Understanding, Search, Classification</li>
+                    </ul>
+                `,
+                content_center: `
+                    <h3>Decoder-Only (GPT)</h3>
+                    <ul>
+                        <li>Unidirectional</li>
+                        <li>Causal Masking</li>
+                        <li><strong>Use:</strong> Generation, Chat, Coding</li>
+                    </ul>
+                `,
+                content_right: `
+                    <h3>Encoder-Decoder (T5)</h3>
+                    <ul>
+                        <li>Hybrid</li>
+                        <li>Cross-Attention</li>
+                        <li><strong>Use:</strong> Translation, Summarization</li>
+                    </ul>
+                `,
+                image: "images/slide_30_architectures.png",
+                notes: "There are three ways to arrange these blocks. Encoder-only (like BERT) looks at the whole sentence—great for understanding. Decoder-only (like GPT) looks only at the past—great for generation. Encoder-Decoder (like the original) does both—great for translation."
+            },
+            {
+                id: 31,
+                layout: 'content-simulation',
+                title: "The Decoder's Secret: Causal Masking",
+                content: `
+                    <p>When training GPT, we can't let it "cheat" by seeing the future.</p>
+                    <ul>
+                        <li><strong>Mask:</strong> Set attention scores for future tokens to -∞.</li>
+                        <li><strong>Softmax:</strong> Converts -∞ to 0.</li>
+                        <li>Ensures token <code>t</code> only attends to <code>0...t-1</code>.</li>
+                    </ul>
+                `,
+                simulation: 'sim-20',
+                notes: "For GPT, we have a rule: No cheating. You can't look at the future tokens. We enforce this with a 'Causal Mask'—a diagonal blinder that hides the future."
+            },
+            {
+                id: 32,
+                layout: 'content-simulation',
+                title: "Final Step: Predicting the Next Token",
+                content: `
+                    <p>Output vector (512-dim) → Linear Layer → Logits (50,000-dim).</p>
+                    <p><strong>Softmax:</strong> Convert logits to probabilities.</p>
+                    <p>We sample from this distribution to get the next word.</p>
+                `,
+                simulation: 'sim-21',
+                notes: "Finally, we take the output vector and project it up to the size of the vocabulary. We get a probability for every word in the dictionary. 'Cat' is 40%, 'Dog' is 20%. We roll the dice and pick one."
+            },
+            {
+                id: 33,
+                layout: 'comparison',
+                title: "BERT vs GPT",
+                content_left: `
+                    <h3>BERT</h3>
+                    <ul>
+                        <li>"The detective"</li>
+                        <li>Fill-in-the-blank training</li>
+                        <li>Discriminative</li>
+                    </ul>
+                `,
+                content_right: `
+                    <h3>GPT</h3>
+                    <ul>
+                        <li>"The storyteller"</li>
+                        <li>Next-token prediction</li>
+                        <li>Generative</li>
+                    </ul>
+                `,
+                image: "images/slide_33_bert_vs_gpt.png",
+                notes: "BERT is the detective; it sees the crime scene and deduces correctly. GPT is the storyteller; it invents the future one word at a time."
+            },
+            {
+                id: 34,
+                layout: 'code-slide',
+                title: "How Transformers Learn: The Training Loop",
+                content: `
+                    <ul>
+                        <li><strong>Pre-training:</strong> Massive corpus, self-supervised. "Learn language."</li>
+                        <li><strong>Fine-tuning:</strong> Specific dataset. "Learn the task."</li>
+                        <li><strong>RLHF:</strong> Learn values/preference.</li>
+                    </ul>
+                `,
+                code: `# Simplified training loop
+for batch in dataloader:
+    # Forward pass
+    input_tokens = batch["input_ids"]      # [batch_size, seq_len]
+    predictions = model(input_tokens)       # [batch_size, seq_len, vocab_size]
+    
+    # Compute loss (next-token prediction)
+    targets = batch["target_ids"]           # [batch_size, seq_len]
+    loss = cross_entropy(predictions, targets)
+    
+    # Backward pass
+    loss.backward()                         # Compute gradients
+    clip_grad_norm_(model.parameters(), 1.0) # Prevent explosion
+    optimizer.step()                        # Update weights
+    optimizer.zero_grad()                   # Reset gradients
+    
+    # Learning rate schedule
+    scheduler.step()`,
+                notes: "The training loop is actually quite standard. Feed text, predict next token, calculate error, update weights. Repeat for 300 billion tokens."
+            },
+            {
+                id: 35,
+                layout: 'full-simulation',
+                title: "The Complete Forward Pass",
+                simulation: 'sim-22',
+                notes: "Let's put it all together. Text to tokens. Tokens to embeddings. Add position. Attention. Feed Forward. Add. Norm. Repeat 96 times. Probability. Output. This is the miracle of modern AI."
+            },
+            {
+                id: 36,
+                layout: 'content-image',
+                title: "Why Transformers Changed Everything",
+                content: `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                        <div style="background:var(--bg-elevated); padding:1rem; border-radius:8px;">
+                            <strong>1. Parallelization</strong><br>Training is O(1) in time, not sequential.
+                        </div>
+                        <div style="background:var(--bg-elevated); padding:1rem; border-radius:8px;">
+                            <strong>2. Long-Range Dependency</strong><br>Direct access to any history.
+                        </div>
+                        <div style="background:var(--bg-elevated); padding:1rem; border-radius:8px;">
+                            <strong>3. Scaling Laws</strong><br>Performance scales predictably with compute/data.
+                        </div>
+                        <div style="background:var(--bg-elevated); padding:1rem; border-radius:8px;">
+                            <strong>4. Universality</strong><br>Works for text, image, audio, protein folding.
+                        </div>
+                    </div>
+                `,
+                image: "images/slide_30_architectures.png", // Reusing image as placeholder or we can use another
+                notes: "Why did this architecture win? 1. It's parallelizable (fast). 2. It has infinite memory (attention). 3. It scales (just add more layers). 4. It's universal (everything is a sequence)."
+            },
+            {
+                id: 37,
+                layout: 'full-simulation',
+                title: "From Markov to Transformers: The Full Arc",
+                simulation: 'sim-23',
+                notes: "We've come a long way. From counting Roman citizens to Markov chains to Perceptrons to Transformers. It's a single story of humanity's quest to predict the future."
+            },
+            {
+                id: 38,
+                layout: 'title-slide',
+                title: "Now Let's Build One.",
+                subtitle: "Transformer from scratch. 45 minutes. May the best model win.",
+                footer: "github.com/AbhishekAdile/transformer-hackathon",
+                image: "images/slide_34_hackathon_cta.png",
+                notes: "Now it's your turn. Open your notebooks. Let's code."
+            }
+        ];
+
+        // --- Simulations ---
+        const SIMULATIONS = {
+            'sim-1': (container) => { // Bell Curve - Enhanced
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; padding:15px; box-sizing:border-box;">
+                        <div id="sim1-chart" style="flex:1; min-height:0;"></div>
+                        <div style="padding:15px 0; text-align:center; flex-shrink:0;">
+                            <button id="sim1-btn">Add 50 Samples</button>
+                            <button id="sim1-reset" style="margin-left:10px;">Reset</button>
+                            <div style="margin-top:12px; font-family:var(--font-mono); display:flex; gap:2rem; justify-content:center;">
+                                <span>Count: <span id="sim1-count" style="color:var(--accent-blue);font-weight:bold;">0</span></span>
+                                <span>Mean: <span id="sim1-mean" style="color:var(--accent-amber);font-weight:bold;">0.00</span></span>
+                                <span>StdDev: <span id="sim1-std" style="color:var(--accent-purple);font-weight:bold;">0.00</span></span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                const chartContainer = document.getElementById('sim1-chart');
+                const margin = { top: 30, right: 30, bottom: 40, left: 50 };
+                const width = chartContainer.clientWidth - margin.left - margin.right;
+                const height = chartContainer.clientHeight - margin.top - margin.bottom;
+
+                const svg = d3.select("#sim1-chart").append("svg")
+                    .attr("width", chartContainer.clientWidth)
+                    .attr("height", chartContainer.clientHeight)
+                    .append("g")
+                    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+                // Add gradient definition for bars
+                const defs = svg.append("defs");
+                const gradient = defs.append("linearGradient")
+                    .attr("id", "barGradient")
+                    .attr("x1", "0%").attr("y1", "100%")
+                    .attr("x2", "0%").attr("y2", "0%");
+                gradient.append("stop").attr("offset", "0%").attr("stop-color", "rgba(251,191,36,0.3)");
+                gradient.append("stop").attr("offset", "100%").attr("stop-color", "rgba(251,191,36,0.9)");
+
+                // Add glow filter
+                const filter = defs.append("filter").attr("id", "glow");
+                filter.append("feGaussianBlur").attr("stdDeviation", "3").attr("result", "coloredBlur");
+                const feMerge = filter.append("feMerge");
+                feMerge.append("feMergeNode").attr("in", "coloredBlur");
+                feMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+                const x = d3.scaleLinear().domain([-4, 4]).range([0, width]);
+                const y = d3.scaleLinear().domain([0, 0.5]).range([height, 0]);
+
+                // Styled axes
+                svg.append("g")
+                    .attr("transform", `translate(0,${height})`)
+                    .call(d3.axisBottom(x).ticks(10))
+                    .attr("color", "#64748b")
+                    .selectAll("line").attr("stroke", "#334155");
+
+                svg.append("g")
+                    .call(d3.axisLeft(y).ticks(5))
+                    .attr("color", "#64748b")
+                    .selectAll("line").attr("stroke", "#334155");
+
+                // Theoretical curve with glow
+                const pdf = z => (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z);
+                const line = d3.line().x(d => x(d[0])).y(d => y(d[1])).curve(d3.curveCatmullRom);
+                const range = d3.range(-4, 4.05, 0.05).map(z => [z, pdf(z)]);
+
+                // Curve shadow/glow
+                svg.append("path")
+                    .datum(range)
+                    .attr("fill", "none")
+                    .attr("stroke", "rgba(56,189,248,0.3)")
+                    .attr("stroke-width", 8)
+                    .attr("d", line)
+                    .attr("filter", "url(#glow)");
+
+                // Main theoretical curve
+                svg.append("path")
+                    .datum(range)
+                    .attr("fill", "none")
+                    .attr("stroke", "var(--accent-blue)")
+                    .attr("stroke-width", 3)
+                    .attr("d", line);
+
+                // Label
+                svg.append("text")
+                    .attr("x", width / 2)
+                    .attr("y", -10)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "var(--text-secondary)")
+                    .attr("font-size", "12px")
+                    .text("Standard Normal Distribution N(0,1)");
+
+                let samples = [];
+
+                function update(animate = true) {
+                    const bins = d3.bin().domain(x.domain()).thresholds(x.ticks(30))(samples);
+
+                    // Calculate bin width for proper density normalization
+                    const binWidth = bins.length > 0 && bins[0].x1 !== undefined ?
+                        (bins[0].x1 - bins[0].x0) : 0.25;
+
+                    // Convert counts to probability density: density = count / (n * binWidth)
+                    // This makes the histogram comparable to the PDF where area under curve = 1
+                    bins.forEach(bin => {
+                        bin.density = samples.length > 0 ? bin.length / (samples.length * binWidth) : 0;
+                    });
+
+                    const bars = svg.selectAll(".bar").data(bins);
+
+                    // Enter + Update with proper density scale (same y scale as PDF)
+                    bars.enter()
+                        .append("rect")
+                        .attr("class", "bar")
+                        .attr("x", d => x(d.x0) + 1)
+                        .attr("width", d => Math.max(0, x(d.x1) - x(d.x0) - 2))
+                        .attr("y", height)
+                        .attr("height", 0)
+                        .attr("rx", 2)
+                        .style("fill", "url(#barGradient)")
+                        .merge(bars)
+                        .transition()
+                        .duration(animate ? 400 : 0)
+                        .ease(d3.easeCubicOut)
+                        .attr("y", d => y(d.density))
+                        .attr("height", d => height - y(d.density));
+
+                    bars.exit()
+                        .transition()
+                        .duration(200)
+                        .attr("height", 0)
+                        .attr("y", height)
+                        .remove();
+
+                    // Update stats
+                    document.getElementById('sim1-count').innerText = samples.length;
+                    if (samples.length > 0) {
+                        document.getElementById('sim1-mean').innerText = d3.mean(samples).toFixed(3);
+                        document.getElementById('sim1-std').innerText = d3.deviation(samples).toFixed(3);
+                    } else {
+                        document.getElementById('sim1-mean').innerText = "0.00";
+                        document.getElementById('sim1-std').innerText = "0.00";
+                    }
+                }
+
+                // Particle animation - reduced count and simplified for performance
+                function addParticles(newSamples) {
+                    // Only animate every 5th particle to reduce lag (10 particles instead of 50)
+                    const step = 5;
+                    for (let i = 0; i < newSamples.length; i += step) {
+                        const val = newSamples[i];
+                        const delay = (i / step) * 30; // Stagger particles slightly
+
+                        const particle = svg.append("circle")
+                            .attr("cx", x(val))
+                            .attr("cy", -10)
+                            .attr("r", 5)
+                            .style("fill", "var(--accent-amber)")
+                            .style("opacity", 0.85);
+
+                        particle.transition()
+                            .delay(delay)
+                            .duration(600)
+                            .ease(d3.easeBounceOut)
+                            .attr("cy", height - 10)
+                            .transition()
+                            .duration(150)
+                            .style("opacity", 0)
+                            .on("end", function () { d3.select(this).remove(); });
+                    }
+                }
+
+                document.getElementById('sim1-btn').onclick = () => {
+                    const newSamples = [];
+                    for (let i = 0; i < 50; i++) {
+                        const sample = d3.randomNormal(0, 1)();
+                        samples.push(sample);
+                        newSamples.push(sample);
+                    }
+                    addParticles(newSamples);
+                    setTimeout(() => update(true), 200);
+                };
+
+                document.getElementById('sim1-reset').onclick = () => {
+                    samples = [];
+                    svg.selectAll(".bar")
+                        .transition()
+                        .duration(300)
+                        .attr("height", 0)
+                        .attr("y", height)
+                        .remove();
+                    update(false);
+                };
+            },
+
+            'sim-2': (container) => { // Markov Analysis
+                container.innerHTML = `
+                    <div class="layout-split ratio-55-45">
+                        <div style="display:flex; flex-direction:column; height:80%;">
+                            <h3>Text Input</h3>
+                            <textarea id="sim2-input" style="flex:1; background:var(--bg-primary); color:white; border:1px solid var(--bg-elevated); padding:10px; font-family:var(--font-mono); font-size:1.2rem; resize:none;">Eugene Onegin was a dandy from Saint Petersburg...</textarea>
+                            <button id="sim2-btn" style="margin-top:10px; padding:10px; background:var(--accent-blue); border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Analyze</button>
+                        </div>
+                        <div style="display:flex; flex-direction:column; justify-content:center; align-items:center;">
+                            <h3>Transition Matrix</h3>
+                            <div style="display:grid; grid-template-columns:auto 1fr 1fr; gap:5px; margin-bottom:20px;">
+                                <div></div><div style="text-align:center;">Vowel</div><div style="text-align:center;">Consonant</div>
+                                <div style="display:flex;align-items:center;">Vowel</div>
+                                <div id="p-vv" style="background:var(--bg-elevated); padding:15px; text-align:center;">-</div>
+                                <div id="p-vc" style="background:var(--accent-amber); color:black; padding:15px; text-align:center; font-weight:bold;">-</div>
+                                <div style="display:flex;align-items:center;">Consonant</div>
+                                <div id="p-cv" style="background:var(--accent-blue); color:black; padding:15px; text-align:center; font-weight:bold;">-</div>
+                                <div id="p-cc" style="background:var(--bg-elevated); padding:15px; text-align:center;">-</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                const analyze = () => {
+                    const text = document.getElementById('sim2-input').value.toLowerCase().replace(/[^a-z]/g, '');
+                    const vowels = "aeiou";
+                    let counts = { vv: 0, vc: 0, cv: 0, cc: 0 };
+                    let totals = { v: 0, c: 0 };
+
+                    for (let i = 0; i < text.length - 1; i++) {
+                        const curr = vowels.includes(text[i]) ? 'v' : 'c';
+                        const next = vowels.includes(text[i + 1]) ? 'v' : 'c';
+                        counts[curr + next]++;
+                        totals[curr]++;
+                    }
+
+                    const p = (num, den) => den > 0 ? (num / den).toFixed(2) : "0.00";
+                    document.getElementById('p-vv').innerText = p(counts.vv, totals.v);
+                    document.getElementById('p-vc').innerText = p(counts.vc, totals.v);
+                    document.getElementById('p-cv').innerText = p(counts.cv, totals.c);
+                    document.getElementById('p-cc').innerText = p(counts.cc, totals.c);
+                };
+                document.getElementById('sim2-btn').onclick = analyze;
+                analyze();
+            },
+
+            'sim-3': (container) => { // Markov Chain - Enhanced
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; padding:20px;">
+                        <div id="sim3-viz" style="flex:1; position:relative;"></div>
+                        <div style="padding:15px; background:var(--glass-surface); border-radius:12px; margin-top:10px; border:1px solid var(--glass-border);">
+                            <div style="display:flex; gap:15px; align-items:center;">
+                                <span style="color:var(--text-secondary);">Generated:</span>
+                                <span id="sim3-output" style="font-family:var(--font-mono); font-size:1.2rem; color:var(--accent-amber); flex:1;"></span>
+                                <button id="sim3-clear">Clear</button>
+                            </div>
+                            <div style="margin-top:10px; color:var(--text-muted); font-size:0.85rem;">
+                                Click nodes to build a sentence. Orange nodes show valid next words.
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                const nodes = [
+                    { id: "The" }, { id: "cat" }, { id: "dog" },
+                    { id: "sat" }, { id: "ate" }, { id: "on" },
+                    { id: "mat" }, { id: "apple" }
+                ];
+                const links = [
+                    { source: "The", target: "cat", prob: 0.5 }, { source: "The", target: "dog", prob: 0.5 },
+                    { source: "cat", target: "sat", prob: 0.6 }, { source: "cat", target: "ate", prob: 0.4 },
+                    { source: "dog", target: "sat", prob: 0.7 }, { source: "dog", target: "ate", prob: 0.3 },
+                    { source: "sat", target: "on", prob: 1.0 }, { source: "ate", target: "apple", prob: 1.0 },
+                    { source: "on", target: "The", prob: 0.3 }, { source: "on", target: "mat", prob: 0.7 }
+                ];
+
+                const vizContainer = document.getElementById('sim3-viz');
+                const width = vizContainer.clientWidth;
+                const height = vizContainer.clientHeight;
+
+                const svg = d3.select("#sim3-viz").append("svg")
+                    .attr("width", width).attr("height", height);
+
+                // Add defs for gradients and glows
+                const defs = svg.append("defs");
+
+                // Glow filter
+                const glowFilter = defs.append("filter").attr("id", "nodeGlow");
+                glowFilter.append("feGaussianBlur").attr("stdDeviation", "4").attr("result", "coloredBlur");
+                const feMerge = glowFilter.append("feMerge");
+                feMerge.append("feMergeNode").attr("in", "coloredBlur");
+                feMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+                // Arrow marker with gradient
+                const marker = defs.append("marker")
+                    .attr("id", "arrowGrad")
+                    .attr("viewBox", "0 -5 10 10")
+                    .attr("refX", 28).attr("refY", 0)
+                    .attr("markerWidth", 6).attr("markerHeight", 6)
+                    .attr("orient", "auto");
+                marker.append("path").attr("fill", "var(--accent-blue)").attr("d", "M0,-5L10,0L0,5");
+
+                // Active marker (orange)
+                const markerActive = defs.append("marker")
+                    .attr("id", "arrowActive")
+                    .attr("viewBox", "0 -5 10 10")
+                    .attr("refX", 28).attr("refY", 0)
+                    .attr("markerWidth", 6).attr("markerHeight", 6)
+                    .attr("orient", "auto");
+                markerActive.append("path").attr("fill", "var(--accent-amber)").attr("d", "M0,-5L10,0L0,5");
+
+                const simulation = d3.forceSimulation(nodes)
+                    .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+                    .force("charge", d3.forceManyBody().strength(-500))
+                    .force("center", d3.forceCenter(width / 2, height / 2))
+                    .force("collision", d3.forceCollide().radius(40));
+
+                // Links
+                const link = svg.append("g").selectAll("line")
+                    .data(links).enter().append("line")
+                    .attr("stroke", "rgba(56, 189, 248, 0.4)")
+                    .attr("stroke-width", d => 1 + d.prob * 2)
+                    .attr("marker-end", "url(#arrowGrad)")
+                    .style("transition", "all 0.3s ease");
+
+                // Link labels (probability)
+                const linkLabels = svg.append("g").selectAll("text")
+                    .data(links).enter().append("text")
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "var(--text-muted)")
+                    .attr("font-size", "10px")
+                    .attr("font-family", "var(--font-mono)")
+                    .text(d => d.prob.toFixed(1));
+
+                // Nodes group
+                const node = svg.append("g").selectAll("g")
+                    .data(nodes).enter().append("g")
+                    .style("cursor", "pointer")
+                    .call(d3.drag()
+                        .on("start", (event, d) => {
+                            if (!event.active) simulation.alphaTarget(0.3).restart();
+                            d.fx = d.x; d.fy = d.y;
+                        })
+                        .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+                        .on("end", (event, d) => {
+                            if (!event.active) simulation.alphaTarget(0);
+                            d.fx = null; d.fy = null;
+                        }));
+
+                // Node glow circle (behind)
+                node.append("circle")
+                    .attr("class", "node-glow")
+                    .attr("r", 28)
+                    .attr("fill", "none")
+                    .attr("stroke", "rgba(56, 189, 248, 0.3)")
+                    .attr("stroke-width", 4)
+                    .attr("filter", "url(#nodeGlow)");
+
+                // Main node circle
+                node.append("circle")
+                    .attr("class", "node-main")
+                    .attr("r", 24)
+                    .attr("fill", "var(--bg-elevated)")
+                    .attr("stroke", "var(--accent-blue)")
+                    .attr("stroke-width", 2)
+                    .style("transition", "all 0.3s ease");
+
+                // Node labels
+                node.append("text")
+                    .attr("dy", 5)
+                    .attr("text-anchor", "middle")
+                    .text(d => d.id)
+                    .attr("fill", "white")
+                    .attr("font-weight", "600")
+                    .attr("font-size", "12px")
+                    .style("pointer-events", "none");
+
+                simulation.on("tick", () => {
+                    link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+                    linkLabels.attr("x", d => (d.source.x + d.target.x) / 2)
+                        .attr("y", d => (d.source.y + d.target.y) / 2 - 5);
+                    node.attr("transform", d => `translate(${d.x},${d.y})`);
+                });
+
+                // Interaction state
+                let currentWord = "";
+                let currentNodeId = null;
+
+                function updateHighlights() {
+                    const possible = currentNodeId
+                        ? links.filter(l => l.source.id === currentNodeId).map(l => l.target.id)
+                        : nodes.map(n => n.id);
+
+                    // Update nodes
+                    node.selectAll(".node-main")
+                        .attr("stroke", d => d.id === currentNodeId ? "var(--accent-purple)" :
+                            possible.includes(d.id) ? "var(--accent-amber)" : "var(--accent-blue)")
+                        .attr("stroke-width", d => possible.includes(d.id) ? 3 : 2);
+
+                    node.selectAll(".node-glow")
+                        .attr("stroke", d => d.id === currentNodeId ? "rgba(192, 132, 252, 0.5)" :
+                            possible.includes(d.id) ? "rgba(251, 191, 36, 0.4)" : "rgba(56, 189, 248, 0.3)");
+
+                    // Update links
+                    link.attr("stroke", d => d.source.id === currentNodeId ? "rgba(251, 191, 36, 0.8)" : "rgba(56, 189, 248, 0.4)")
+                        .attr("marker-end", d => d.source.id === currentNodeId ? "url(#arrowActive)" : "url(#arrowGrad)");
+                }
+
+                node.on("click", (e, d) => {
+                    // Only allow valid transitions or starting fresh
+                    const possible = currentNodeId
+                        ? links.filter(l => l.source.id === currentNodeId).map(l => l.target.id)
+                        : nodes.map(n => n.id);
+
+                    if (!possible.includes(d.id)) return;
+
+                    currentWord += d.id + " ";
+                    currentNodeId = d.id;
+                    document.getElementById('sim3-output').innerText = currentWord;
+
+                    // Pulse animation on clicked node
+                    d3.select(e.currentTarget).select(".node-main")
+                        .transition().duration(100)
+                        .attr("r", 30)
+                        .transition().duration(200)
+                        .attr("r", 24);
+
+                    updateHighlights();
+                });
+
+                document.getElementById('sim3-clear').onclick = () => {
+                    currentWord = "";
+                    currentNodeId = null;
+                    document.getElementById('sim3-output').innerText = "";
+                    updateHighlights();
+                };
+
+                // Initial highlights
+                updateHighlights();
+            },
+
+            'sim-4': (container) => { // Perceptron
+                container.innerHTML = `
+                    <div style="display:flex; height:100%;">
+                        <div style="flex:1; padding:20px; display:flex; flex-direction:column; gap:10px;">
+                            <label>Width 1 (w1): <span id="val-w1">0.5</span></label>
+                            <input type="range" id="in-w1" min="-2" max="2" step="0.1" value="0.5">
+                            
+                            <label>Width 2 (w2): <span id="val-w2">-0.5</span></label>
+                            <input type="range" id="in-w2" min="-2" max="2" step="0.1" value="-0.5">
+                            
+                            <label>Bias (b): <span id="val-b">0.1</span></label>
+                            <input type="range" id="in-b" min="-2" max="2" step="0.1" value="0.1">
+                            
+                            <div style="margin-top:20px; font-weight:bold; color:var(--accent-amber);">
+                                Equation: <span id="eq-disp"></span> = 0
+                            </div>
+                        </div>
+                        <div id="sim4-viz" style="flex:2; background:#000;"></div>
+                    </div>
+                `;
+
+                const w = container.clientWidth * 0.6;
+                const h = container.clientHeight;
+                const svg = d3.select("#sim4-viz").append("svg").attr("width", w).attr("height", h);
+
+                // Coordinate system
+                const xScale = d3.scaleLinear().domain([-5, 5]).range([0, w]);
+                const yScale = d3.scaleLinear().domain([-5, 5]).range([h, 0]);
+
+                svg.append("g").attr("transform", `translate(0,${h / 2})`).append("line").attr("x1", 0).attr("x2", w).attr("stroke", "#333");
+                svg.append("g").attr("transform", `translate(${w / 2},0)`).append("line").attr("y1", 0).attr("y2", h).attr("stroke", "#333");
+
+                // Data points
+                const points = [{ x: 1, y: 1, c: 1 }, { x: 2, y: 2, c: 1 }, { x: -1, y: -1, c: 0 }, { x: -2, y: 1, c: 0 }];
+                svg.selectAll("circle").data(points).enter().append("circle")
+                    .attr("cx", d => xScale(d.x)).attr("cy", d => yScale(d.y)).attr("r", 8)
+                    .attr("fill", d => d.c ? "var(--accent-blue)" : "var(--accent-red)");
+
+                const line = svg.append("line").attr("stroke", "white").attr("stroke-width", 3);
+
+                const update = () => {
+                    const w1 = parseFloat(document.getElementById('in-w1').value);
+                    const w2 = parseFloat(document.getElementById('in-w2').value);
+                    const b = parseFloat(document.getElementById('in-b').value);
+
+                    document.getElementById('val-w1').innerText = w1;
+                    document.getElementById('val-w2').innerText = w2;
+                    document.getElementById('val-b').innerText = b;
+                    document.getElementById('eq-disp').innerText = `${w1}x + ${w2}y + ${b}`;
+
+                    // w1*x + w2*y + b = 0  =>  y = (-b - w1*x) / w2
+                    const getY = x => (-b - w1 * x) / (w2 || 0.0001);
+
+                    line.attr("x1", xScale(-5)).attr("y1", yScale(getY(-5)))
+                        .attr("x2", xScale(5)).attr("y2", yScale(getY(5)));
+
+                    // Color background (decision boundary) - simplified as line for now
+                };
+
+                document.querySelectorAll('input').forEach(i => i.addEventListener('input', update));
+                update();
+            },
+
+            'sim-5': (container) => { // XOR
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                        <button id="sim5-btn" style="margin:20px; padding:10px 20px; background:var(--accent-purple); border:none; border-radius:4px; font-weight:bold; cursor:pointer; color:white;">Add Hidden Layer (Warp Space)</button>
+                        <div id="sim5-viz" style="flex:1; width:100%; position:relative;"></div>
+                    </div>
+                 `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const svg = d3.select("#sim5-viz").append("svg").attr("width", w).attr("height", h);
+
+                const xScale = d3.scaleLinear().domain([-0.5, 1.5]).range([w * 0.2, w * 0.8]);
+                const yScale = d3.scaleLinear().domain([-0.5, 1.5]).range([h * 0.8, h * 0.2]);
+
+                // XOR Points
+                const points = [
+                    { x: 0, y: 0, c: 0 }, { x: 1, y: 1, c: 0 },
+                    { x: 0, y: 1, c: 1 }, { x: 1, y: 0, c: 1 }
+                ];
+
+                // Draw Grid
+                const gridSize = 20;
+                let grid = [];
+                for (let i = 0; i <= gridSize; i++) {
+                    for (let j = 0; j <= gridSize; j++) {
+                        grid.push({ x: i / gridSize, y: j / gridSize });
+                    }
+                }
+
+                const gridDots = svg.selectAll(".grid").data(grid).enter().append("circle")
+                    .attr("cx", d => xScale(d.x)).attr("cy", d => yScale(d.y)).attr("r", 2).attr("fill", "#333");
+
+                const dataDots = svg.selectAll(".data").data(points).enter().append("circle")
+                    .attr("cx", d => xScale(d.x)).attr("cy", d => yScale(d.y)).attr("r", 15)
+                    .attr("fill", d => d.c ? "var(--accent-blue)" : "var(--accent-red)")
+                    .attr("stroke", "white").attr("stroke-width", 2);
+
+                let transformed = false;
+                document.getElementById('sim5-btn').onclick = () => {
+                    transformed = !transformed;
+                    const t = d3.transition().duration(2000).ease(d3.easeCubicInOut);
+
+                    // Simple non-linear warp visualization
+                    // Map (x,y) -> (x, y + x*(1-x)) kinda bump?
+                    // Or just separate the points visually to 3D projected logic
+
+                    const transform = (d) => {
+                        if (!transformed) return { x: d.x, y: d.y };
+                        // XOR separation logic: 
+                        // Push (1,1) far away or lift (0,1) and (1,0)
+                        // Let's just move them to a linearly separable arrangement
+                        if (d.x > 0.8 && d.y > 0.8) return { x: 1.5, y: 1.5 }; // (1,1) moves far out
+                        return { x: d.x, y: d.y };
+                    };
+
+                    dataDots.transition(t)
+                        .attr("cx", d => xScale(transform(d).x))
+                        .attr("cy", d => yScale(transform(d).y));
+
+                    gridDots.transition(t)
+                        .attr("cx", d => xScale(transform(d).x))
+                        .attr("cy", d => yScale(transform(d).y));
+                };
+            },
+
+            'sim-6': (container) => { // Backpropagation
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <div id="sim6-viz" style="width:100%; height:70%;"></div>
+                        <div style="margin-top:20px; text-align:center;">
+                            <button id="sim6-btn" style="padding:10px 20px; background:var(--accent-blue); border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Train Step (Backprop)</button>
+                            <div style="margin-top:10px;">Loss: <span id="sim6-loss">High</span></div>
+                        </div>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.7;
+                const svg = d3.select("#sim6-viz").append("svg").attr("width", w).attr("height", h);
+
+                // Simple Network: Input (2) -> Hidden (3) -> Output (1)
+                const layers = [
+                    { x: w * 0.2, count: 2, color: 'white' },
+                    { x: w * 0.5, count: 3, color: 'var(--accent-blue)' },
+                    { x: w * 0.8, count: 1, color: 'var(--accent-amber)' }
+                ];
+
+                const nodes = [];
+                layers.forEach((l, li) => {
+                    for (let i = 0; i < l.count; i++) {
+                        nodes.push({
+                            id: `${li}-${i}`, layer: li,
+                            x: l.x, y: h / 2 + (i - (l.count - 1) / 2) * 80,
+                            color: l.color
+                        });
+                    }
+                });
+
+                const links = [];
+                nodes.forEach(src => {
+                    nodes.forEach(dst => {
+                        if (dst.layer === src.layer + 1) {
+                            links.push({ src: src, dst: dst, val: Math.random() });
+                        }
+                    });
+                });
+
+                const linkSel = svg.selectAll("line").data(links).enter().append("line")
+                    .attr("x1", d => d.src.x).attr("y1", d => d.src.y)
+                    .attr("x2", d => d.dst.x).attr("y2", d => d.dst.y)
+                    .attr("stroke", "#555").attr("stroke-width", 2);
+
+                const nodeSel = svg.selectAll("circle").data(nodes).enter().append("circle")
+                    .attr("cx", d => d.x).attr("cy", d => d.y).attr("r", 15)
+                    .attr("fill", d => d.color).attr("stroke", "#333");
+
+                document.getElementById('sim6-btn').onclick = () => {
+                    // Forward Pass Animation
+                    linkSel.transition().duration(500).attr("stroke", "#fff").attr("stroke-width", 4)
+                        .transition().duration(500).attr("stroke", "#555").attr("stroke-width", 2);
+
+                    // Backward Pass Animation (Red)
+                    setTimeout(() => {
+                        document.getElementById('sim6-loss').innerText = "Updating Weights...";
+                        document.getElementById('sim6-loss').style.color = "var(--accent-red)";
+
+                        linkSel.transition().duration(500).delay((d, i) => (2 - d.src.layer) * 300)
+                            .attr("stroke", "var(--accent-red)").attr("stroke-width", 4)
+                            .transition().duration(500)
+                            .attr("stroke", "#555").attr("stroke-width", 2);
+
+                        setTimeout(() => {
+                            document.getElementById('sim6-loss').innerText = "Loss Decreased";
+                            document.getElementById('sim6-loss').style.color = "var(--accent-green)";
+                        }, 1500);
+                    }, 1000);
+                };
+            },
+
+            'sim-7': (container) => { // Vanishing Gradient
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column;">
+                         <div style="text-align:center; padding:10px;">
+                            <label>Gradient Magnitude (Weight Size): <span id="sim7-val">0.5</span></label>
+                            <input type="range" id="sim7-slider" min="0.1" max="1.5" step="0.1" value="0.5">
+                        </div>
+                        <div id="sim7-viz" style="flex:1; width:100%;"></div>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const svg = d3.select("#sim7-viz").append("svg").attr("width", w).attr("height", h);
+
+                const numLayers = 10;
+                const layerStep = w / (numLayers + 1);
+
+                const layers = d3.range(numLayers).map(i => ({ x: (i + 1) * layerStep, i: i }));
+
+                // Draw Network
+                svg.selectAll("circle").data(layers).enter().append("circle")
+                    .attr("cx", d => d.x).attr("cy", h / 2).attr("r", 10)
+                    .attr("fill", "#555");
+
+                svg.selectAll("line").data(layers.slice(0, -1)).enter().append("line")
+                    .attr("x1", d => d.x).attr("y1", h / 2)
+                    .attr("x2", (d, i) => layers[i + 1].x).attr("y2", h / 2)
+                    .attr("stroke", "#555").attr("stroke-width", 2);
+
+                const update = () => {
+                    const grad = parseFloat(document.getElementById('sim7-slider').value);
+                    document.getElementById('sim7-val').innerText = grad;
+
+                    // Visualize gradient flowing back from last layer
+                    const gradients = [];
+                    let curr = 1.0;
+                    for (let i = 0; i < numLayers; i++) {
+                        gradients.push(curr);
+                        curr *= grad;
+                    }
+                    gradients.reverse(); // Last layer has full gradient, first has vanished
+
+                    svg.selectAll("circle")
+                        .data(gradients)
+                        .attr("fill", d => d < 0.1 ? "#333" : (d > 1.2 ? "var(--accent-red)" : "var(--accent-green)"))
+                        .attr("r", d => 5 + Math.min(20, d * 10));
+                };
+
+                document.getElementById('sim7-slider').oninput = update;
+                update();
+            },
+
+            'sim-8': (container) => { // RNN Unrolled
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                        <button id="sim8-btn" style="margin:10px; padding:10px; background:var(--accent-blue);">Process Sequence</button>
+                        <div id="sim8-viz" style="width:100%; flex:1;"></div>
+                    </div>
+                 `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const svg = d3.select("#sim8-viz").append("svg").attr("width", w).attr("height", h);
+
+                const steps = ["The", "cat", "sat", "on", "the", "mat"];
+                const stepW = w / (steps.length + 1);
+
+                const g = svg.selectAll("g").data(steps).enter().append("g")
+                    .attr("transform", (d, i) => `translate(${(i + 1) * stepW}, ${h / 2})`);
+
+                // Input
+                g.append("text").text(d => d).attr("y", 80).attr("text-anchor", "middle").attr("fill", "white");
+                // Hiddens
+                const hiddens = g.append("circle").attr("r", 20).attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-blue)").attr("stroke-width", 2);
+                // Loop/connection
+                svg.selectAll("path").data(steps.slice(0, -1)).enter().append("path")
+                    .attr("d", (d, i) => `M${(i + 1) * stepW + 20},${h / 2} L${(i + 2) * stepW - 20},${h / 2}`)
+                    .attr("stroke", "#555").attr("stroke-width", 2).attr("marker-end", "url(#arrow)");
+
+                document.getElementById('sim8-btn').onclick = () => {
+                    // Animate flow
+                    hiddens.transition().duration(0).attr("fill", "var(--bg-elevated)");
+
+                    hiddens.transition().duration(500).delay((d, i) => i * 500)
+                        .attr("fill", "var(--accent-blue)") // Active
+                        .transition().duration(2000)
+                        .attr("fill", (d, i) => {
+                            // Fade out logic to show memory loss?
+                            return "#334155"; // Return to base
+                        });
+
+                    // Show memory trace
+                    // Highlight last node, show how much it "sees" from first
+                    setTimeout(() => {
+                        hiddens.attr("opacity", (d, i) => 1.0 - (steps.length - 1 - i) * 0.15);
+                    }, steps.length * 500);
+                };
+            },
+
+            'sim-9': (container) => { // Embeddings
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                        < h3>Word Graph</h3>
+                        <div id="sim9-viz" style="width:100%; height:80%;"></div>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const svg = d3.select("#sim9-viz").append("svg").attr("width", w).attr("height", h);
+
+                // Mock 2D Embeddings reduced
+                const words = [
+                    { t: "King", x: w * 0.3, y: h * 0.3, g: 1 },
+                    { t: "Queen", x: w * 0.32, y: h * 0.35, g: 1 },
+                    { t: "Man", x: w * 0.7, y: h * 0.3, g: 2 },
+                    { t: "Woman", x: w * 0.72, y: h * 0.35, g: 2 },
+                    { t: "Apple", x: w * 0.5, y: h * 0.7, g: 3 },
+                    { t: "Orange", x: w * 0.55, y: h * 0.72, g: 3 }
+                ];
+
+                svg.selectAll("line").data([
+                    { s: 0, e: 1 }, { s: 2, e: 3 } // Relations
+                ]).enter().append("line")
+                    .attr("x1", d => words[d.s].x).attr("y1", d => words[d.s].y)
+                    .attr("x2", d => words[d.e].x).attr("y2", d => words[d.e].y)
+                    .attr("stroke", "#555").attr("stroke-dasharray", "4");
+
+                const gs = svg.selectAll("g").data(words).enter().append("g")
+                    .attr("transform", d => `translate(${d.x},${d.y})`);
+
+                gs.append("circle").attr("r", 5).attr("fill", "var(--accent-code)");
+                gs.append("text").text(d => d.t).attr("dy", -10).attr("text-anchor", "middle").attr("fill", "var(--text-secondary)");
+
+                // Dynamic Hover
+                svg.on("mousemove", (e) => {
+                    // Update projection line?
+                });
+            },
+
+            'sim-10': (container) => { // Attention (Seq2Seq)
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                         <div style="margin-bottom:10px; color:var(--text-secondary);">Hover over Decoder (Bottom) to see Attention</div>
+                        <div id="sim10-viz" style="width:100%; flex:1;"></div>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const svg = d3.select("#sim10-viz").append("svg").attr("width", w).attr("height", h);
+
+                const encWords = ["Je", "suis", "etudiant"];
+                const decWords = ["I", "am", "student"];
+
+                const encX = d3.scalePoint().domain(encWords).range([w * 0.2, w * 0.8]);
+                const decX = d3.scalePoint().domain(decWords).range([w * 0.2, w * 0.8]);
+
+                // Encoder Nodes (Top)
+                const encNodes = svg.selectAll(".enc").data(encWords).enter().append("g")
+                    .attr("class", "enc").attr("transform", d => `translate(${encX(d)}, ${h * 0.2})`);
+                encNodes.append("circle").attr("r", 15).attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-blue)");
+                encNodes.append("text").text(d => d).attr("dy", -25).attr("text-anchor", "middle").attr("fill", "white");
+
+                // Decoder Nodes (Bottom)
+                const decNodes = svg.selectAll(".dec").data(decWords).enter().append("g")
+                    .attr("class", "dec").attr("transform", d => `translate(${decX(d)}, ${h * 0.8})`)
+                    .style("cursor", "pointer");
+                decNodes.append("circle").attr("r", 15).attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-green)");
+                decNodes.append("text").text(d => d).attr("dy", 35).attr("text-anchor", "middle").attr("fill", "white");
+
+                // Attention Lines
+                const attentionWeights = {
+                    "I": [0.9, 0.1, 0.0],
+                    "am": [0.1, 0.8, 0.1],
+                    "student": [0.0, 0.1, 0.9]
+                };
+
+                const linesGroup = svg.append("g");
+
+                decNodes.on("mouseenter", (e, d) => {
+                    const weights = attentionWeights[d];
+                    linesGroup.innerHTML = ''; // Clear
+                    linesGroup.selectAll("line").data(encWords).enter().append("line")
+                        .attr("x1", ew => encX(ew)).attr("y1", h * 0.2 + 15)
+                        .attr("x2", decX(d)).attr("y2", h * 0.8 - 15)
+                        .attr("stroke", "var(--accent-amber)")
+                        .attr("stroke-width", (ew, i) => weights[i] * 10)
+                        .attr("opacity", (ew, i) => weights[i]);
+                });
+            },
+
+            'sim-11': (container) => { // Tokenization
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                        <input type="text" id="sim11-input" value="The transformer is unbelievable" style="padding:10px; font-size:1.5rem; width:80%; margin-top:20px; text-align:center; background:var(--bg-elevated); color:white; border:none;">
+                        <div id="sim11-tokens" style="display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:40px;"></div>
+                        <div id="sim11-ids" style="display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:20px; font-family:var(--font-mono); color:var(--accent-blue);"></div>
+                    </div>
+                `;
+
+                const process = () => {
+                    const text = document.getElementById('sim11-input').value;
+                    const tokens = [];
+                    const ids = [];
+
+                    // Mock Subword Tokenization logic
+                    const words = text.split(" ");
+                    words.forEach(w => {
+                        if (w.length > 5 && !['transformer'].includes(w.toLowerCase())) {
+                            // Split long words
+                            const p1 = w.substring(0, 3);
+                            const p2 = w.substring(3);
+                            tokens.push(p1 + "-");
+                            tokens.push("-" + p2);
+                            ids.push(Math.floor(Math.random() * 10000));
+                            ids.push(Math.floor(Math.random() * 10000));
+                        } else {
+                            tokens.push(w);
+                            ids.push(Math.floor(Math.random() * 10000));
+                        }
+                    });
+
+                    const tokenDiv = document.getElementById('sim11-tokens');
+                    const idDiv = document.getElementById('sim11-ids');
+                    tokenDiv.innerHTML = '';
+                    idDiv.innerHTML = '';
+
+                    tokens.forEach((t, i) => {
+                        const d = document.createElement('div');
+                        d.style.padding = "10px 20px";
+                        d.style.background = "var(--bg-surface)";
+                        d.style.border = "1px solid var(--accent-purple)";
+                        d.style.borderRadius = "8px";
+                        d.innerText = t;
+                        tokenDiv.appendChild(d);
+                    });
+
+                    ids.forEach(id => {
+                        const d = document.createElement('div');
+                        d.style.minWidth = "60px";
+                        d.style.textAlign = "center";
+                        d.innerText = id;
+                        idDiv.appendChild(d);
+                    });
+                };
+
+                document.getElementById('sim11-input').addEventListener('input', process);
+                process();
+            },
+
+            'sim-12': (container) => { // Embeddings Lookup
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:row; align-items:center;">
+                        <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+                             <div style="font-family:var(--font-mono); margin-bottom:10px;">ID: 2056</div>
+                             <div style="width:100px; height:300px; border:2px solid var(--accent-blue); position:relative;" id="sim12-matrix">
+                                 <!-- Matrix visualization -->
+                                 <div style="position:absolute; top:40%; left:0; width:100%; height:20px; background:var(--accent-amber); opacity:0.5;"></div>
+                             </div>
+                             <div style="margin-top:10px; color:var(--text-muted);">Embedding Matrix</div>
+                        </div>
+                        <div style="padding:20px; font-size:2rem;">→</div>
+                        <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+                            <div style="font-family:var(--font-mono); margin-bottom:10px;">Vector</div>
+                            <div style="display:flex; gap:5px;" id="sim12-vec"></div>
+                        </div>
+                    </div>
+                `;
+
+                // Draw fake matrix lines
+                const mat = document.getElementById('sim12-matrix');
+                for (let i = 0; i < 30; i++) {
+                    const l = document.createElement('div');
+                    l.style.width = "100%";
+                    l.style.height = "1px";
+                    l.style.background = "#334155";
+                    l.style.marginBottom = "8px";
+                    mat.appendChild(l);
+                }
+
+                // Draw vector
+                const vec = document.getElementById('sim12-vec');
+                for (let i = 0; i < 8; i++) {
+                    const v = document.createElement('div');
+                    v.style.width = "30px";
+                    v.style.height = (20 + Math.random() * 60) + "px";
+                    v.style.background = "var(--accent-green)";
+                    v.style.borderRadius = "2px";
+                    vec.appendChild(v);
+                }
+            },
+
+            'sim-13': (container) => { // Positional Encoding
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column;">
+                        <div id="sim13-viz" style="width:100%; height:80%;"></div>
+                        <div style="text-align:center;">
+                            Positional Encodings (Sinusoidal)
+                        </div>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                document.getElementById('sim13-viz').appendChild(canvas);
+                const ctx = canvas.getContext('2d');
+
+                const d_model = 50;
+                const seq_len = 50;
+                const cellW = w / seq_len;
+                const cellH = h / d_model;
+
+                for (let pos = 0; pos < seq_len; pos++) {
+                    for (let i = 0; i < d_model; i++) {
+                        // PE(pos, 2i) = sin(pos / 10000^(2i/d_model))
+                        // Roughly
+                        const val = Math.sin(pos / Math.pow(10000, i / d_model));
+                        // Map -1..1 to Color
+                        const gb = Math.floor(128 + val * 127);
+                        ctx.fillStyle = `rgb(0, ${gb}, ${gb})`; // Cyan-ish heatmap
+                        ctx.fillRect(pos * cellW, i * cellH, cellW, cellH);
+                    }
+                }
+            },
+
+            'sim-14': (container) => { // Q K V Projection
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; align-items:center; justify-content:center;">
+                        <div style="text-align:center;">
+                            <div style="width:50px; height:150px; background:var(--accent-code); margin:0 auto; border-radius:4px;"></div>
+                            <div style="margin-top:10px;">Input Vector (x)</div>
+                        </div>
+                        <div style="font-size:3rem; margin:0 20px;">×</div>
+                        <div style="display:flex; flex-direction:column; gap:20px;">
+                            <div style="display:flex; align-items:center;">
+                                <div style="width:80px; height:80px; background:var(--bg-elevated); border:2px solid var(--accent-red); display:flex;align-items:center;justify-content:center;">Wq</div>
+                                <div style="margin:0 10px;">=</div>
+                                <div style="width:50px; height:50px; background:var(--accent-red);"></div>
+                                <div style="margin-left:5px;">Query</div>
+                            </div>
+                            <div style="display:flex; align-items:center;">
+                                <div style="width:80px; height:80px; background:var(--bg-elevated); border:2px solid var(--accent-green); display:flex;align-items:center;justify-content:center;">Wk</div>
+                                <div style="margin:0 10px;">=</div>
+                                <div style="width:50px; height:50px; background:var(--accent-green);"></div>
+                                <div style="margin-left:5px;">Key</div>
+                            </div>
+                            <div style="display:flex; align-items:center;">
+                                <div style="width:80px; height:80px; background:var(--bg-elevated); border:2px solid var(--accent-blue); display:flex;align-items:center;justify-content:center;">Wv</div>
+                                <div style="margin:0 10px;">=</div>
+                                <div style="width:50px; height:50px; background:var(--accent-blue);"></div>
+                                <div style="margin-left:5px;">Value</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            'sim-15': (container) => { // Self-Attention
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column;">
+                        <div style="display:flex; justify-content:space-around; padding:20px;" id="sim15-tokens">
+                            <div class="attn-token" data-id="0" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">The</div>
+                            <div class="attn-token" data-id="1" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">animal</div>
+                            <div class="attn-token" data-id="2" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">didn't</div>
+                            <div class="attn-token" data-id="3" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">cross</div>
+                        </div>
+                        <div id="sim15-viz" style="flex:1; width:100%;"></div>
+                    </div>
+                 `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.7;
+                const svg = d3.select("#sim15-viz").append("svg").attr("width", w).attr("height", h);
+
+                const tokens = ["The", "animal", "didn't", "cross"];
+                const x = d3.scalePoint().domain([0, 1, 2, 3]).range([w * 0.1, w * 0.9]);
+
+                // Attention Matrix (Mock)
+                const attn = [
+                    [0.8, 0.1, 0.05, 0.05],
+                    [0.1, 0.7, 0.1, 0.1],
+                    [0.05, 0.1, 0.8, 0.05],
+                    [0.0, 0.05, 0.05, 0.9]
+                ];
+
+                const update = (selectedIdx) => {
+                    svg.selectAll("*").remove();
+
+                    // Draw connections
+                    tokens.forEach((t, i) => {
+                        const weight = attn[selectedIdx][i];
+                        if (weight > 0.01) {
+                            svg.append("path")
+                                .attr("d", `M${x(selectedIdx)},${h * 0.1} Q${(x(selectedIdx) + x(i)) / 2},${h * 0.5} ${x(i)},${h * 0.1}`)
+                                .attr("fill", "none")
+                                .attr("stroke", "var(--accent-amber)")
+                                .attr("stroke-width", weight * 10)
+                                .attr("opacity", weight);
+
+                            svg.append("text").text((weight * 100).toFixed(0) + "%")
+                                .attr("x", (x(selectedIdx) + x(i)) / 2).attr("y", h * 0.5 + 15)
+                                .attr("text-anchor", "middle").attr("fill", "var(--accent-amber)");
+                        }
+                    });
+
+                    document.querySelectorAll('.attn-token').forEach((el, i) => {
+                        el.style.borderColor = (i === selectedIdx) ? "var(--accent-amber)" : "var(--text-primary)";
+                        el.style.color = (i === selectedIdx) ? "var(--accent-amber)" : "var(--text-primary)";
+                    });
+                };
+
+                document.querySelectorAll('.attn-token').forEach(el => {
+                    el.onclick = () => update(parseInt(el.dataset.id));
+                });
+                update(0); // Default
+            },
+
+            'sim-16': (container) => { // Multi-Head Attention
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <button id="sim16-btn" style="padding:10px 20px; background:var(--accent-blue); border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:20px;">Run Multi-Head Attention</button>
+                        <div id="sim16-viz" style="width:100%; height:60%;"></div>
+                        <div id="sim16-desc" style="margin-top:20px; color:var(--text-secondary);">Waiting...</div>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.6;
+                const svg = d3.select("#sim16-viz").append("svg").attr("width", w).attr("height", h);
+
+                const heads = 8;
+                const headW = w / (heads + 2);
+
+                // Input
+                svg.append("rect").attr("x", w / 2 - 40).attr("y", h - 20).attr("width", 80).attr("height", 20).attr("fill", "white").attr("id", "sim16-in");
+
+                // Heads
+                const headGroup = svg.selectAll(".head").data(d3.range(heads)).enter().append("g");
+                headGroup.append("rect")
+                    .attr("x", (d, i) => (i + 1) * headW).attr("y", h / 2 - 20)
+                    .attr("width", headW - 10).attr("height", 40)
+                    .attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-blue)");
+
+                headGroup.append("text").text((d, i) => `H${i + 1}`)
+                    .attr("x", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y", h / 2 + 5)
+                    .attr("text-anchor", "middle").attr("fill", "white").attr("font-size", "0.8rem");
+
+                // Output
+                svg.append("rect").attr("x", w / 2 - 40).attr("y", 0).attr("width", 80).attr("height", 20).attr("fill", "var(--accent-green)").attr("opacity", 0).attr("id", "sim16-out");
+
+                document.getElementById('sim16-btn').onclick = () => {
+                    // Split
+                    svg.selectAll(".split-line").remove();
+                    svg.selectAll(".split-line").data(d3.range(heads)).enter().append("line")
+                        .attr("class", "split-line")
+                        .attr("x1", w / 2).attr("y1", h - 20)
+                        .attr("x2", w / 2).attr("y2", h - 20)
+                        .attr("stroke", "var(--accent-blue)")
+                        .transition().duration(500)
+                        .attr("x2", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y2", h / 2 + 20);
+
+                    setTimeout(() => {
+                        // Process
+                        headGroup.select("rect").transition().duration(200).attr("fill", "var(--accent-amber)")
+                            .transition().duration(200).attr("fill", "var(--bg-elevated)");
+
+                        document.getElementById('sim16-desc').innerText = "Parallel Processing: Grammar, Relationships, Context...";
+
+                        setTimeout(() => {
+                            // Merge
+                            svg.selectAll(".merge-line").remove();
+                            svg.selectAll(".merge-line").data(d3.range(heads)).enter().append("line")
+                                .attr("class", "merge-line")
+                                .attr("x1", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y1", h / 2 - 20)
+                                .attr("x2", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y2", h / 2 - 20)
+                                .attr("stroke", "var(--accent-green)")
+                                .transition().duration(500)
+                                .attr("x2", w / 2).attr("y2", 20);
+
+                            d3.select("#sim16-out").transition().delay(500).duration(200).attr("opacity", 1);
+                            document.getElementById('sim16-desc').innerText = "Concatenated & Projected Result";
+                        }, 800);
+                    }, 600);
+                };
+            },
+
+            'sim-17': (container) => { // Feed Forward
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <h3>Feed Forward expansion</h3>
+                        <div id="sim17-viz" style="width:100%; height:80%;"></div>
+                    </div>
+                 `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.8;
+                const svg = d3.select("#sim17-viz").append("svg").attr("width", w).attr("height", h);
+
+                // Input 512
+                svg.append("rect").attr("x", w * 0.1).attr("y", h * 0.4).attr("width", w * 0.2).attr("height", h * 0.2)
+                    .attr("fill", "var(--accent-blue)").attr("rx", 4);
+                svg.append("text").text("512 dim").attr("x", w * 0.2).attr("y", h * 0.5).attr("text-anchor", "middle").attr("fill", "black").attr("font-weight", "bold");
+
+                // Hidden 2048
+                svg.append("rect").attr("x", w * 0.4).attr("y", h * 0.1).attr("width", w * 0.2).attr("height", h * 0.8)
+                    .attr("fill", "var(--accent-amber)").attr("rx", 4);
+                svg.append("text").text("2048 dim (ReLU)").attr("x", w * 0.5).attr("y", h * 0.5).attr("text-anchor", "middle").attr("fill", "black").attr("font-weight", "bold")
+                    .attr("transform", `rotate(-90, ${w * 0.5}, ${h * 0.5})`);
+
+                // Output 512
+                svg.append("rect").attr("x", w * 0.7).attr("y", h * 0.4).attr("width", w * 0.2).attr("height", h * 0.2)
+                    .attr("fill", "var(--accent-green)").attr("rx", 4);
+                svg.append("text").text("512 dim").attr("x", w * 0.8).attr("y", h * 0.5).attr("text-anchor", "middle").attr("fill", "black").attr("font-weight", "bold");
+
+                // Arrows
+                svg.append("defs").append("marker").attr("id", "arrow-l").attr("viewBox", "0 -5 10 10").attr("refX", 10).attr("refY", 0).attr("markerWidth", 10).attr("markerHeight", 10).attr("orient", "auto")
+                    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "white");
+
+                svg.append("line").attr("x1", w * 0.3 + 5).attr("y1", h * 0.5).attr("x2", w * 0.4 - 5).attr("y2", h * 0.5).attr("stroke", "white").attr("stroke-width", 4).attr("marker-end", "url(#arrow-l)");
+                svg.append("line").attr("x1", w * 0.6 + 5).attr("y1", h * 0.5).attr("x2", w * 0.7 - 5).attr("y2", h * 0.5).attr("stroke", "white").attr("stroke-width", 4).attr("marker-end", "url(#arrow-l)");
+
+                // Interaction
+                svg.on("mouseenter", () => {
+                    svg.selectAll("rect").attr("stroke", "white").attr("stroke-width", 2);
+                }).on("mouseleave", () => {
+                    svg.selectAll("rect").attr("stroke", "none");
+                });
+            },
+
+            'sim-18': (container) => { // Residuals
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <button id="sim18-btn" style="padding:10px; margin-bottom:10px; background:var(--accent-blue);">Simulate Gradient Flow</button>
+                        <div id="sim18-viz" style="width:100%; height:70%;"></div>
+                    </div>
+                 `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.7;
+                const svg = d3.select("#sim18-viz").append("svg").attr("width", w).attr("height", h);
+
+                // Block
+                svg.append("rect").attr("x", w * 0.3).attr("y", h * 0.3).attr("width", w * 0.4).attr("height", h * 0.4)
+                    .attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-blue)").attr("rx", 8);
+                svg.append("text").text("Processing Layer").attr("x", w * 0.5).attr("y", h * 0.5).attr("text-anchor", "middle").attr("fill", "white");
+
+                // Residual Path (Skip Connection)
+                const pathD = `M${w * 0.1},${h * 0.5} L${w * 0.2},${h * 0.5} L${w * 0.2},${h * 0.1} L${w * 0.8},${h * 0.1} L${w * 0.8},${h * 0.5} L${w * 0.9},${h * 0.5}`;
+                const skipPath = svg.append("path").attr("d", pathD).attr("fill", "none")
+                    .attr("stroke", "var(--accent-code)").attr("stroke-width", 4).attr("stroke-dasharray", "10,5").style("opacity", 0.5);
+
+                // Main Path
+                const mainPathD = `M${w * 0.1},${h * 0.5} L${w * 0.9},${h * 0.5}`;
+                const mainPath = svg.append("path").attr("d", mainPathD).attr("fill", "none")
+                    .attr("stroke", "var(--text-muted)").attr("stroke-width", 2);
+
+                svg.append("circle").attr("cx", w * 0.8).attr("cy", h * 0.5).attr("r", 15).attr("fill", "var(--bg-surface)").attr("stroke", "white");
+                svg.append("text").text("+").attr("x", w * 0.8).attr("y", h * 0.5 + 5).attr("text-anchor", "middle").attr("fill", "white").attr("font-size", "20px");
+
+                document.getElementById('sim18-btn').onclick = () => {
+                    // Animate Pulse
+                    skipPath.transition().duration(1000).attr("stroke", "var(--accent-green)").attr("stroke-width", 6)
+                        .transition().duration(1000).attr("stroke", "var(--accent-code)").attr("stroke-width", 4);
+                };
+            },
+
+            'sim-19': (container) => { // Transformer Block
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; align-items:center; justify-content:center;">
+                        <div style="position:relative; width:300px; height:400px; border:2px solid var(--text-muted); border-radius:12px; padding:20px; display:flex; flex-direction:column; gap:10px; background:var(--bg-surface);">
+                            <div style="text-align:center; color:var(--text-secondary); margin-bottom:10px;">Transformer Block x N</div>
+                            
+                            <div style="background:var(--accent-blue); padding:15px; text-align:center; border-radius:6px; color:black; font-weight:bold;">Multi-Head Attention</div>
+                            <div style="background:var(--bg-elevated); padding:10px; text-align:center; border-radius:6px; border:1px solid var(--accent-code);">Add & Norm</div>
+                            
+                            <div style="background:var(--accent-amber); padding:15px; text-align:center; border-radius:6px; color:black; font-weight:bold;">Feed Forward</div>
+                            <div style="background:var(--bg-elevated); padding:10px; text-align:center; border-radius:6px; border:1px solid var(--accent-code);">Add & Norm</div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            'sim-20': (container) => { // Causal Masking
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                        <button id="sim20-btn" style="padding:10px; margin:20px; background:var(--accent-purple);">Toggle Mask</button>
+                        <div id="sim20-viz" style="display:grid; grid-template-columns:repeat(5, 50px); grid-gap:5px;"></div>
+                        <div style="margin-top:20px; text-align:center; color:var(--text-secondary);">
+                            Rows: Queries (Current Position)<br>Cols: Keys (Past/Future)
+                        </div>
+                    </div>
+                `;
+
+                const grid = document.getElementById('sim20-viz');
+                const size = 5;
+                let masked = true;
+
+                const render = () => {
+                    grid.innerHTML = '';
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const cells = document.createElement('div');
+                            cells.style.width = "50px";
+                            cells.style.height = "50px";
+                            cells.style.display = "flex";
+                            cells.style.alignItems = "center";
+                            cells.style.justifyContent = "center";
+                            cells.style.fontSize = "0.8rem";
+
+                            if (masked && j > i) {
+                                cells.style.background = "#333";
+                                cells.innerText = "-inf";
+                                cells.style.color = "#555";
+                            } else {
+                                cells.style.background = "var(--bg-elevated)";
+                                cells.innerText = (Math.random()).toFixed(2);
+                                cells.style.color = "white";
+                            }
+                            grid.appendChild(cells);
+                        }
+                    }
+                };
+
+                document.getElementById('sim20-btn').onclick = () => { masked = !masked; render(); };
+                render();
+            },
+
+            'sim-21': (container) => { // Softmax
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center;">
+                         <h3>Logits &rarr; Softmax &rarr; Probs</h3>
+                        <div id="sim21-viz" style="width:100%; height:70%;"></div>
+                        <button id="sim21-btn" style="margin-top:20px; padding:10px 20px; background:var(--accent-green);">Calculate Softmax</button>
+                    </div>
+                `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.7;
+                const svg = d3.select("#sim21-viz").append("svg").attr("width", w).attr("height", h);
+
+                let data = [2.0, 1.0, 0.1, 3.5, -1.0];
+                const labels = ["Option A", "Option B", "Option C", "Target", "Option E"];
+
+                const x = d3.scaleBand().domain(labels).range([0, w]).padding(0.2);
+                const y = d3.scaleLinear().domain([-2, 5]).range([h, 0]);
+
+                const update = (mode) => {
+                    let displayData = data;
+                    let yAxis = y;
+
+                    if (mode === 'prob') {
+                        const exps = data.map(Math.exp);
+                        const sum = exps.reduce((a, b) => a + b, 0);
+                        displayData = exps.map(v => v / sum);
+                        yAxis = d3.scaleLinear().domain([0, 1]).range([h, 0]);
+                    }
+
+                    svg.selectAll("*").remove();
+
+                    svg.selectAll(".bar").data(displayData).enter().append("rect")
+                        .attr("x", (d, i) => x(labels[i]))
+                        .attr("y", d => yAxis(d))
+                        .attr("width", x.bandwidth())
+                        .attr("height", d => h - yAxis(d))
+                        .attr("fill", (d, i) => mode === 'prob' ? "var(--accent-green)" : "var(--accent-blue)") // Highlight target
+                        .on("click", (e, d) => {
+                            // Interactive tweak
+                            // (Simplified for demo)
+                        });
+
+                    svg.selectAll(".label").data(displayData).enter().append("text")
+                        .text((d, i) => mode === 'prob' ? (d * 100).toFixed(1) + "%" : d.toFixed(1))
+                        .attr("x", (d, i) => x(labels[i]) + x.bandwidth() / 2)
+                        .attr("y", d => yAxis(d) - 5)
+                        .attr("text-anchor", "middle")
+                        .attr("fill", "white");
+
+                    svg.append("g").attr("transform", `translate(0,${h})`).call(d3.axisBottom(x)).attr("color", "#94a3b8");
+                };
+
+                document.getElementById('sim21-btn').onclick = () => update('prob');
+                update('logit');
+            },
+
+            'sim-22': (container) => { // Full Forward Pass
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+                        <svg width="100%" height="80%" viewBox="0 0 800 400" id="sim22-svg">
+                            <!-- Drawn via D3 below -->
+                        </svg>
+                        <button id="sim22-btn" style="background:var(--accent-blue); padding:10px 20px;">Trace Prediction</button>
+                    </div>
+                `;
+
+                const svg = d3.select("#sim22-svg");
+
+                // Blocks
+                const blocks = [
+                    { x: 50, y: 200, w: 100, h: 50, t: "Input" },
+                    { x: 200, y: 150, w: 100, h: 150, t: "Encoder" },
+                    { x: 350, y: 150, w: 100, h: 150, t: "Decoder" },
+                    { x: 500, y: 200, w: 100, h: 50, t: "Linear" },
+                    { x: 650, y: 200, w: 100, h: 50, t: "Softmax" }
+                ];
+
+                svg.selectAll("rect").data(blocks).enter().append("rect")
+                    .attr("x", d => d.x).attr("y", d => d.y).attr("width", d => d.w).attr("height", d => d.h)
+                    .attr("rx", 5).attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-code)");
+
+                svg.selectAll("text").data(blocks).enter().append("text")
+                    .text(d => d.t).attr("x", d => d.x + d.w / 2).attr("y", d => d.y + d.h / 2).attr("dy", 5).attr("text-anchor", "middle").attr("fill", "white");
+
+                document.getElementById('sim22-btn').onclick = () => {
+                    const p = svg.append("circle").attr("r", 10).attr("fill", "var(--accent-green)").attr("cx", 50).attr("cy", 225);
+
+                    p.transition().duration(500).attr("cx", 150)
+                        .transition().duration(500).attr("cx", 250)
+                        .transition().duration(100).attr("opacity", 0.5) // inside encoder
+                        .transition().duration(100).attr("opacity", 1).attr("cx", 300)
+                        .transition().duration(500).attr("cx", 400) // decoder
+                        .transition().duration(500).attr("cx", 550) // linear
+                        .transition().duration(500).attr("cx", 700) // softmax
+                        .transition().duration(500).attr("r", 20).attr("fill", "var(--accent-amber)");
+                };
+            },
+            'sim-embed-3d': (container) => { // 3D Word Embedding Visualization
+                container.innerHTML = `
+                    <div id="embed3d-container" style="width:100%; height:100%; position:relative;">
+                        <div id="embed3d-scene" style="width:100%; height:100%;"></div>
+                        <div id="embed3d-legend" style="position:absolute; bottom:20px; left:20px; background:rgba(0,0,0,0.85); padding:15px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,0.1);">
+                            <div style="margin-bottom:8px; color:var(--text-secondary); font-weight:bold;">Word Categories:</div>
+                            <div><span style="color:#f59e0b;">●</span> Animals</div>
+                            <div><span style="color:#22c55e;">●</span> Food</div>
+                            <div><span style="color:#a855f7;">●</span> Royalty</div>
+                            <div><span style="color:#3b82f6;">●</span> Actions</div>
+                            <div><span style="color:#eab308;">●</span> Places</div>
+                        </div>
+                        <div id="embed3d-status" style="position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); padding:10px 25px; border-radius:20px; font-size:14px; color:var(--accent-blue); border:1px solid rgba(255,255,255,0.1);">
+                            Training: Epoch 0
+                        </div>
+                    </div>
+                `;
+
+                const sceneContainer = document.getElementById('embed3d-scene');
+                const width = sceneContainer.clientWidth;
+                const height = sceneContainer.clientHeight;
+
+                // Three.js Setup
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x050810);
+
+                const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+                camera.position.set(6, 5, 6);
+                camera.lookAt(1.5, 1.5, 1.5);
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(width, height);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                sceneContainer.appendChild(renderer.domElement);
+
+                // Add lighting for solid planet-like spheres
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+                scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                directionalLight.position.set(5, 10, 7);
+                scene.add(directionalLight);
+
+                const pointLight = new THREE.PointLight(0x38bdf8, 0.8, 20);
+                pointLight.position.set(-3, 3, 3);
+                scene.add(pointLight);
+
+                // Create matplotlib-style 3D Axes with tick marks
+                const axisLength = 3;
+                const axisColor = 0x666666;
+                const tickCount = 5;
+
+                // Helper to create tick label
+                function createTickLabel(text, position) {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = 48;
+                    canvas.height = 24;
+                    ctx.fillStyle = '#888888';
+                    ctx.font = '16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(text, 24, 18);
+                    const texture = new THREE.CanvasTexture(canvas);
+                    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+                    const sprite = new THREE.Sprite(spriteMat);
+                    sprite.position.set(...position);
+                    sprite.scale.set(0.4, 0.2, 1);
+                    scene.add(sprite);
+                }
+
+                // X Axis with ticks
+                const xAxisGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(axisLength, 0, 0)
+                ]);
+                const xAxisMat = new THREE.LineBasicMaterial({ color: axisColor });
+                scene.add(new THREE.Line(xAxisGeom, xAxisMat));
+
+                // X tick marks and labels
+                for (let i = 0; i <= tickCount; i++) {
+                    const x = (i / tickCount) * axisLength;
+                    const tickGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(x, -0.1, 0),
+                        new THREE.Vector3(x, 0.1, 0)
+                    ]);
+                    scene.add(new THREE.Line(tickGeom, new THREE.LineBasicMaterial({ color: axisColor })));
+                    createTickLabel((i * 0.2).toFixed(1), [x, -0.3, 0]);
+                }
+                createTickLabel('x', [axisLength + 0.3, 0, 0]);
+
+                // Y Axis with ticks
+                const yAxisGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, axisLength, 0)
+                ]);
+                const yAxisMat = new THREE.LineBasicMaterial({ color: axisColor });
+                scene.add(new THREE.Line(yAxisGeom, yAxisMat));
+
+                // Y tick marks and labels
+                for (let i = 0; i <= tickCount; i++) {
+                    const y = (i / tickCount) * axisLength;
+                    const tickGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(-0.1, y, 0),
+                        new THREE.Vector3(0.1, y, 0)
+                    ]);
+                    scene.add(new THREE.Line(tickGeom, new THREE.LineBasicMaterial({ color: axisColor })));
+                    createTickLabel((i * 0.2).toFixed(1), [-0.4, y, 0]);
+                }
+                createTickLabel('y', [0, axisLength + 0.3, 0]);
+
+                // Z Axis with ticks
+                const zAxisGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, 0, axisLength)
+                ]);
+                const zAxisMat = new THREE.LineBasicMaterial({ color: axisColor });
+                scene.add(new THREE.Line(zAxisGeom, zAxisMat));
+
+                // Z tick marks and labels
+                for (let i = 0; i <= tickCount; i++) {
+                    const z = (i / tickCount) * axisLength;
+                    const tickGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(0, -0.1, z),
+                        new THREE.Vector3(0, 0.1, z)
+                    ]);
+                    scene.add(new THREE.Line(tickGeom, new THREE.LineBasicMaterial({ color: axisColor })));
+                    createTickLabel((i * 0.2).toFixed(1), [0, -0.3, z]);
+                }
+                createTickLabel('z', [0, 0, axisLength + 0.3]);
+
+                // Add grid planes (like matplotlib)
+                const gridHelper = new THREE.GridHelper(axisLength, 10, 0x333333, 0x222222);
+                gridHelper.position.set(axisLength / 2, 0, axisLength / 2);
+                scene.add(gridHelper);
+
+                // Words with categories and target positions (spread out to avoid overlap)
+                const words = [
+                    // Animals (orange) - cluster bottom-left of grid
+                    { word: "cat", category: "animal", color: 0xf59e0b, target: [0.2, 0.3, 0.2] },
+                    { word: "dog", category: "animal", color: 0xf59e0b, target: [0.5, 0.5, 0.3] },
+                    { word: "bird", category: "animal", color: 0xf59e0b, target: [0.3, 0.7, 0.1] },
+                    { word: "fish", category: "animal", color: 0xf59e0b, target: [0.1, 0.5, 0.5] },
+                    { word: "lion", category: "animal", color: 0xf59e0b, target: [0.6, 0.4, 0.4] },
+
+                    // Food (green) - cluster far right side
+                    { word: "apple", category: "food", color: 0x22c55e, target: [2.5, 0.3, 0.2] },
+                    { word: "bread", category: "food", color: 0x22c55e, target: [2.8, 0.5, 0.4] },
+                    { word: "cheese", category: "food", color: 0x22c55e, target: [2.4, 0.7, 0.3] },
+                    { word: "pizza", category: "food", color: 0x22c55e, target: [2.6, 0.4, 0.6] },
+                    { word: "banana", category: "food", color: 0x22c55e, target: [2.7, 0.6, 0.1] },
+
+                    // Royalty (purple) - cluster top center (high Y)
+                    { word: "king", category: "royalty", color: 0xa855f7, target: [1.3, 2.6, 0.3] },
+                    { word: "queen", category: "royalty", color: 0xa855f7, target: [1.6, 2.8, 0.5] },
+                    { word: "prince", category: "royalty", color: 0xa855f7, target: [1.1, 2.4, 0.2] },
+                    { word: "princess", category: "royalty", color: 0xa855f7, target: [1.5, 2.5, 0.6] },
+                    { word: "throne", category: "royalty", color: 0xa855f7, target: [1.2, 2.7, 0.4] },
+
+                    // Actions (blue) - cluster front-left (high Z)
+                    { word: "run", category: "action", color: 0x3b82f6, target: [0.3, 1.4, 2.5] },
+                    { word: "walk", category: "action", color: 0x3b82f6, target: [0.6, 1.2, 2.7] },
+                    { word: "jump", category: "action", color: 0x3b82f6, target: [0.4, 1.6, 2.3] },
+                    { word: "swim", category: "action", color: 0x3b82f6, target: [0.2, 1.3, 2.8] },
+                    { word: "fly", category: "action", color: 0x3b82f6, target: [0.5, 1.5, 2.4] },
+
+                    // Places (amber/yellow) - cluster right-front
+                    { word: "city", category: "place", color: 0xeab308, target: [2.3, 1.5, 2.4] },
+                    { word: "home", category: "place", color: 0xeab308, target: [2.6, 1.3, 2.6] },
+                    { word: "park", category: "place", color: 0xeab308, target: [2.2, 1.7, 2.2] },
+                    { word: "beach", category: "place", color: 0xeab308, target: [2.5, 1.4, 2.7] },
+                    { word: "mountain", category: "place", color: 0xeab308, target: [2.4, 1.6, 2.5] }
+                ];
+
+                // Create word spheres (solid, planet-like)
+                const wordMeshes = [];
+                words.forEach(w => {
+                    const startPos = [
+                        Math.random() * 3,
+                        Math.random() * 3,
+                        Math.random() * 3
+                    ];
+
+                    // Solid sphere with lighting (planet-like) - smaller size to prevent overlap
+                    const geometry = new THREE.SphereGeometry(0.12, 32, 32);
+                    const material = new THREE.MeshStandardMaterial({
+                        color: w.color,
+                        roughness: 0.3,
+                        metalness: 0.2,
+                        emissive: w.color,
+                        emissiveIntensity: 0.15
+                    });
+                    const sphere = new THREE.Mesh(geometry, material);
+                    sphere.position.set(...startPos);
+                    scene.add(sphere);
+
+                    // Word label (just name)
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = 256;
+                    canvas.height = 64;
+
+                    // Draw word name
+                    context.fillStyle = '#ffffff';
+                    context.font = 'bold 28px Arial';
+                    context.textAlign = 'center';
+                    context.fillText(w.word, 128, 40);
+
+                    const texture = new THREE.CanvasTexture(canvas);
+                    const spriteMaterial = new THREE.SpriteMaterial({
+                        map: texture,
+                        transparent: true
+                    });
+                    const sprite = new THREE.Sprite(spriteMaterial);
+                    sprite.scale.set(1.0, 0.25, 1);
+                    sprite.position.set(...startPos);
+                    sprite.position.y += 0.35;
+                    scene.add(sprite);
+
+                    wordMeshes.push({
+                        sphere,
+                        sprite,
+                        canvas,
+                        context,
+                        texture,
+                        startPos,
+                        targetPos: w.target,
+                        word: w.word
+                    });
+                });
+
+                // Relationship lines
+                const relationships = [
+                    { from: "king", to: "queen", color: 0xa855f7 },
+                    { from: "cat", to: "dog", color: 0xf59e0b },
+                    { from: "run", to: "walk", color: 0x3b82f6 },
+                    { from: "apple", to: "banana", color: 0x22c55e },
+                    { from: "city", to: "home", color: 0xeab308 },
+                    { from: "prince", to: "princess", color: 0xa855f7 },
+                    { from: "bird", to: "fish", color: 0xf59e0b },
+                    { from: "jump", to: "fly", color: 0x3b82f6 }
+                ];
+
+                const lineMeshes = [];
+
+                function createCurvedLine(from, to, color) {
+                    const midPoint = new THREE.Vector3(
+                        (from.x + to.x) / 2 + (Math.random() - 0.5) * 0.3,
+                        (from.y + to.y) / 2 + (Math.random() - 0.5) * 0.3,
+                        (from.z + to.z) / 2 + 0.3
+                    );
+
+                    const curve = new THREE.QuadraticBezierCurve3(from, midPoint, to);
+                    const points = curve.getPoints(20);
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    const material = new THREE.LineBasicMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: 3
+                    });
+                    const line = new THREE.Line(geometry, material);
+                    scene.add(line);
+                    return { line, material };
+                }
+
+                // Animation state
+                let trainProgress = 0;
+                const trainDuration = 6000;
+                const startTime = Date.now();
+                let linesCreated = false;
+
+                // Animation loop
+                function animate() {
+                    requestAnimationFrame(animate);
+
+                    const elapsed = Date.now() - startTime;
+                    trainProgress = Math.min(1, elapsed / trainDuration);
+
+                    // Update epoch display
+                    const epoch = Math.floor(trainProgress * 100);
+                    const status = document.getElementById('embed3d-status');
+                    if (status) {
+                        if (trainProgress < 1) {
+                            status.textContent = `Training: Epoch ${epoch} `;
+                            status.style.color = 'var(--accent-blue)';
+                        } else {
+                            status.textContent = 'Training Complete ✓';
+                            status.style.color = 'var(--accent-green)';
+                        }
+                    }
+
+                    // Animate word positions
+                    const easeProgress = 1 - Math.pow(1 - trainProgress, 3);
+                    wordMeshes.forEach(w => {
+                        const x = w.startPos[0] + (w.targetPos[0] - w.startPos[0]) * easeProgress;
+                        const y = w.startPos[1] + (w.targetPos[1] - w.startPos[1]) * easeProgress;
+                        const z = w.startPos[2] + (w.targetPos[2] - w.startPos[2]) * easeProgress;
+
+                        w.sphere.position.set(x, y, z);
+                        w.sprite.position.set(x, y + 0.3, z);
+                    });
+
+                    // Create relationship lines after training
+                    if (trainProgress > 0.7 && !linesCreated) {
+                        linesCreated = true;
+                        relationships.forEach(r => {
+                            const fromWord = wordMeshes.find(w => w.word === r.from);
+                            const toWord = wordMeshes.find(w => w.word === r.to);
+                            if (fromWord && toWord) {
+                                const { line, material } = createCurvedLine(
+                                    fromWord.sphere.position.clone(),
+                                    toWord.sphere.position.clone(),
+                                    r.color
+                                );
+                                lineMeshes.push({ line, material });
+                            }
+                        });
+                    }
+
+                    // Fade in lines
+                    if (linesCreated) {
+                        const lineProgress = Math.min(1, (trainProgress - 0.7) / 0.3);
+                        lineMeshes.forEach(l => {
+                            l.material.opacity = lineProgress * 0.7;
+                        });
+                    }
+
+                    // Gentle rotation after training
+                    if (trainProgress >= 1) {
+                        scene.rotation.y += 0.003;
+                    }
+
+                    renderer.render(scene, camera);
+                }
+
+                animate();
+
+                // Handle resize
+                window.addEventListener('resize', () => {
+                    const w = sceneContainer.clientWidth;
+                    const h = sceneContainer.clientHeight;
+                    camera.aspect = w / h;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(w, h);
+                });
+            },
+
+            'sim-23': (container) => { // Full Arc
+                container.innerHTML = `
+                    <div style="height:100%; display:flex; align-items:center; justify-content:center;">
+                        <h2 style="color:var(--accent-green);">The Transformer has been built.</h2>
+                    </div>
+                `;
+            }
+        };
+
+        // --- State Management ---
+        const state = {
+            currentSlide: 0,
+            notesVisible: false,
+            overviewActive: false,
+            totalSlides: SLIDES.length
+        };
+
+        // --- Core Engine ---
+        const app = {
+            init() {
+                this.dom = {
+                    viewer: document.getElementById('slide-viewer'),
+                    progressBar: document.getElementById('progress-bar'),
+                    progressBg: document.getElementById('progress-bg'),
+                    counter: document.getElementById('slide-counter'),
+                    notesPanel: document.getElementById('notes-panel'),
+                    notesContent: document.getElementById('notes-content'),
+                    gotoModal: document.getElementById('goto-modal'),
+                    gotoInput: document.getElementById('goto-input'),
+                    overviewGrid: document.getElementById('overview-grid')
+                };
+
+                this.bindEvents();
+                this.renderOverview();
+                this.checkHash();
+
+                // If no hash, render first slide
+                if (state.currentSlide === 0) this.goToSlide(0);
+            },
+
+            bindEvents() {
+                // Keyboard
+                document.addEventListener('keydown', (e) => {
+                    if (this.dom.gotoModal.classList.contains('active')) {
+                        if (e.key === 'Escape') this.toggleGoto(false);
+                        if (e.key === 'Enter') this.submitGoto();
+                        return;
+                    }
+                    if (state.overviewActive) {
+                        if (e.key === 'Escape' || e.key === 'o' || e.key === 'O') this.toggleOverview();
+                        return;
+                    }
+
+                    switch (e.key) {
+                        case 'ArrowRight':
+                        case ' ': // Space
+                        case 'PageDown':
+                            this.nextSlide();
+                            break;
+                        case 'ArrowLeft':
+                        case 'PageUp':
+                            this.prevSlide();
+                            break;
+                        case 'f':
+                        case 'F':
+                            this.toggleFullscreen();
+                            break;
+                        case 's':
+                        case 'S':
+                            this.toggleNotes();
+                            break;
+                        case 'o':
+                        case 'O':
+                            this.toggleOverview();
+                            break;
+                        case 'g':
+                        case 'G':
+                            this.toggleGoto(true);
+                            e.preventDefault();
+                            break;
+                    }
+                });
+
+                // Hash change
+                window.addEventListener('hashchange', () => this.checkHash());
+
+                // Click progress to jump
+                this.dom.progressBg.addEventListener('click', (e) => {
+                    const rect = this.dom.progressBg.getBoundingClientRect();
+                    const percent = (e.clientX - rect.left) / rect.width;
+                    const slideIndex = Math.floor(percent * SLIDES.length);
+                    this.goToSlide(slideIndex);
+                });
+            },
+
+            checkHash() {
+                const hash = window.location.hash.replace('#/', '');
+                const index = parseInt(hash, 10) - 1;
+                if (!isNaN(index) && index >= 0 && index < SLIDES.length && index !== state.currentSlide) {
+                    this.goToSlide(index, false); // false = don't push hash again
+                }
+            },
+
+            goToSlide(index, updateHash = true) {
+                if (index < 0) index = 0;
+                if (index >= SLIDES.length) index = SLIDES.length - 1;
+
+                state.currentSlide = index;
+
+                // Update UI
+                this.renderSlide(index);
+                this.updateProgress();
+                this.updateNotes();
+
+                if (updateHash) {
+                    window.location.hash = `/${index + 1}`;
+                }
+            },
+
+            nextSlide() {
+                this.goToSlide(state.currentSlide + 1);
+            },
+
+            prevSlide() {
+                this.goToSlide(state.currentSlide - 1);
+            },
+
+            renderSlide(index) {
+                const slide = SLIDES[index];
+                const viewer = this.dom.viewer;
+
+                // Fade out (simple implementation: clear and rebuild. 
+                // For smoother transitions, we could double-buffer slides)
+                viewer.style.opacity = 0;
+
+                setTimeout(() => {
+                    viewer.innerHTML = ''; // Clear
+
+                    // Build Slide HTML based on layout
+                    const el = document.createElement('div');
+                    el.className = 'slide-content';
+                    el.innerHTML = this.getLayoutHTML(slide);
+
+                    // Apply layout specific class
+                    el.classList.add(`layout-${slide.layout}`);
+
+                    // Background Image for Title Slides
+                    if (slide.image && slide.layout === 'title-slide') {
+                        const bg = document.createElement('div');
+                        bg.className = 'slide-bg-image';
+                        bg.style.backgroundImage = `url('${slide.image}')`;
+                        viewer.appendChild(bg);
+                    }
+
+                    viewer.appendChild(el);
+
+                    // Initialize any simulations
+                    if (slide.simulation) {
+                        this.initSimulation(slide.simulation, el.querySelector('.simulation-container'));
+                    }
+
+                    // Syntax Highlighting
+                    // Syntax Highlighting
+                    if (window.hljs) {
+                        hljs.highlightAll();
+                    }
+
+                    // Typeset Math
+                    // Typeset Math
+                    if (window.MathJax && window.MathJax.typesetPromise) {
+                        MathJax.typesetPromise().catch(err => console.warn('MathJax error:', err));
+                    }
+
+                    viewer.style.opacity = 1;
+                }, 150);
+            },
+
+            getLayoutHTML(slide) {
+                switch (slide.layout) {
+                    case 'title-slide':
+                        return `
+                            <h1>${slide.title}</h1>
+                            <h2>${slide.subtitle || ''}</h2>
+                            <div class="footer">${slide.footer || ''}</div>
+                        `;
+                    case 'content-image':
+                        return `
+                            <div class="layout-split ratio-55-45">
+                                <div class="col-text">
+                                    <h2>${slide.title}</h2>
+                                    <div>${slide.content}</div>
+                                </div>
+                                <div class="col-visual">
+                                    <img src="${slide.image}" alt="Slide Visual">
+                                </div>
+                            </div>
+                        `;
+                    case 'content-simulation':
+                        return `
+                            <div class="layout-split ratio-40-60">
+                                <div class="col-text">
+                                    <h2>${slide.title}</h2>
+                                    <div>${slide.content}</div>
+                                </div>
+                                <div class="col-visual">
+                                    <div class="simulation-container" id="sim-${slide.id}"></div>
+                                </div>
+                            </div>
+                        `;
+                    case 'full-simulation':
+                        return `
+                            <div class="layout-full-simulation">
+                                <div class="overlay-title">
+                                    <h2>${slide.title}</h2>
+                                </div>
+                                <div class="simulation-container" id="sim-${slide.id}"></div>
+                            </div>
+                        `;
+                    case 'comparison':
+                        return `
+                            <div class="layout-comparison">
+                                <div class="col-compare">
+                                    ${slide.content_left || '<!-- Left Content -->'}
+                                </div>
+                                <div class="divider"></div>
+                                <div class="col-compare">
+                                    ${slide.content_right || '<!-- Right Content -->'}
+                                </div>
+                            </div>
+                        `;
+                    case 'three-column':
+                        return `
+                            <h2>${slide.title}</h2>
+                            <div class="layout-comparison" style="grid-template-columns: 1fr 1px 1fr 1px 1fr;">
+                                <div class="col-compare">
+                                    ${slide.content_left}
+                                </div>
+                                <div class="divider"></div>
+                                <div class="col-compare">
+                                    ${slide.content_center}
+                                </div>
+                                <div class="divider"></div>
+                                <div class="col-compare">
+                                    ${slide.content_right}
+                                </div>
+                            </div>
+                        `;
+                    case 'section-break':
+                        return `
+                            <div class="layout-section-break">
+                                <h1>${slide.title}</h1>
+                                <h2>${slide.subtitle || ''}</h2>
+                                <p>${slide.description || ''}</p>
+                            </div>
+                        `;
+                    case 'code-slide':
+                        return `
+                            <div class="layout-split ratio-40-60">
+                                <div class="col-text">
+                                    <h2>${slide.title}</h2>
+                                    <div>${slide.content}</div>
+                                </div>
+                                <div class="col-visual" style="align-items: flex-start; overflow: auto; background: var(--bg-surface);">
+                                    <pre><code class="language-python">${slide.code || ''}</code></pre>
+                                </div>
+                            </div>
+                        `;
+                    default:
+                        return `<h1>${slide.title}</h1>`;
+                }
+            },
+
+            initSimulation(simId, container) {
+                if (!container) return;
+                console.log(`Initializing simulation: ${simId} `);
+                container.innerHTML = '';
+
+                // Use requestAnimationFrame to ensure the container has been laid out 
+                // and has correct dimensions before we create the SVG
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        if (SIMULATIONS[simId]) {
+                            SIMULATIONS[simId](container);
+                        } else {
+                            container.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:100%;color:var(--text-secondary)">Simulation ${simId} Placeholder</div>`;
+                        }
+                    });
+                });
+            },
+
+            updateProgress() {
+                const percent = ((state.currentSlide + 1) / SLIDES.length) * 100;
+                this.dom.progressBar.style.width = `${percent}% `;
+                this.dom.counter.innerText = `${state.currentSlide + 1} / ${SLIDES.length}`;
+            },
+
+            updateNotes() {
+                const slide = SLIDES[state.currentSlide];
+                this.dom.notesContent.innerText = slide.notes || "No notes for this slide.";
+            },
+
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    }
+                }
+            },
+
+            toggleNotes() {
+                state.notesVisible = !state.notesVisible;
+                if (state.notesVisible) {
+                    this.dom.notesPanel.classList.add('visible');
+                } else {
+                    this.dom.notesPanel.classList.remove('visible');
+                }
+            },
+
+            toggleOverview() {
+                state.overviewActive = !state.overviewActive;
+                if (state.overviewActive) {
+                    this.dom.overviewGrid.classList.add('active');
+                } else {
+                    this.dom.overviewGrid.classList.remove('active');
+                }
+            },
+
+            renderOverview() {
+                const grid = this.dom.overviewGrid;
+                grid.innerHTML = '';
+                SLIDES.forEach((slide, index) => {
+                    const thumb = document.createElement('div');
+                    thumb.className = 'overview-thumb';
+                    if (index === state.currentSlide) thumb.classList.add('current');
+                    thumb.innerHTML = `
+                        <div class="thumb-num">${index + 1}</div>
+                        <div class="thumb-title">${slide.title}</div>
+                    `;
+                    thumb.addEventListener('click', () => {
+                        this.goToSlide(index);
+                        this.toggleOverview();
+                    });
+                    grid.appendChild(thumb);
+                });
+            },
+
+            toggleGoto(show) {
+                if (show) {
+                    this.dom.gotoModal.classList.add('active');
+                    this.dom.gotoInput.value = '';
+                    this.dom.gotoInput.focus();
+                } else {
+                    this.dom.gotoModal.classList.remove('active');
+                }
+            },
+
+            submitGoto() {
+                const val = parseInt(this.dom.gotoInput.value, 10);
+                if (val && val >= 1 && val <= SLIDES.length) {
+                    this.goToSlide(val - 1);
+                    this.toggleGoto(false);
+                }
+            }
+        };
+
+        // Start App
+        window.addEventListener('DOMContentLoaded', () => {
+            app.init();
+        });
+
+    </script>
+</body>
+
+</html>

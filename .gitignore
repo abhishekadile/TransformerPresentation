@@ -1,0 +1,6 @@
+generate.py
+generate_images.py
+__pycache__/
+*.pyc
+.env
+.DS_Store
