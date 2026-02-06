@@ -2477,104 +2477,446 @@ for batch in dataloader:
                 }
             },
 
-            'sim-14': (container) => { // Q K V Projection
+            'sim-14': (container) => { // Q K V Projection - Interactive
                 container.innerHTML = `
-                    <div style="height:100%; display:flex; align-items:center; justify-content:center;">
-                        <div style="text-align:center;">
-                            <div style="width:50px; height:150px; background:var(--accent-code); margin:0 auto; border-radius:4px;"></div>
-                            <div style="margin-top:10px;">Input Vector (x)</div>
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px;">
+                        <div style="text-align:center; margin-bottom:30px;">
+                            <h3 style="margin:0 0 10px 0; color:var(--accent-blue);">Query, Key, Value Projections</h3>
+                            <p style="margin:0; color:var(--text-secondary); font-size:1.1rem;">Click each matrix to see the transformation</p>
                         </div>
-                        <div style="font-size:3rem; margin:0 20px;">×</div>
-                        <div style="display:flex; flex-direction:column; gap:20px;">
-                            <div style="display:flex; align-items:center;">
-                                <div style="width:80px; height:80px; background:var(--bg-elevated); border:2px solid var(--accent-red); display:flex;align-items:center;justify-content:center;">Wq</div>
-                                <div style="margin:0 10px;">=</div>
-                                <div style="width:50px; height:50px; background:var(--accent-red);"></div>
-                                <div style="margin-left:5px;">Query</div>
-                            </div>
-                            <div style="display:flex; align-items:center;">
-                                <div style="width:80px; height:80px; background:var(--bg-elevated); border:2px solid var(--accent-green); display:flex;align-items:center;justify-content:center;">Wk</div>
-                                <div style="margin:0 10px;">=</div>
-                                <div style="width:50px; height:50px; background:var(--accent-green);"></div>
-                                <div style="margin-left:5px;">Key</div>
-                            </div>
-                            <div style="display:flex; align-items:center;">
-                                <div style="width:80px; height:80px; background:var(--bg-elevated); border:2px solid var(--accent-blue); display:flex;align-items:center;justify-content:center;">Wv</div>
-                                <div style="margin:0 10px;">=</div>
-                                <div style="width:50px; height:50px; background:var(--accent-blue);"></div>
-                                <div style="margin-left:5px;">Value</div>
-                            </div>
-                        </div>
+                        <div id="sim14-viz" style="width:100%; height:70%;"></div>
+                        <div id="sim14-info" style="margin-top:20px; text-align:center; color:var(--text-secondary); font-size:1.1rem; min-height:25px;"></div>
                     </div>
                 `;
+
+                const w = container.clientWidth;
+                const h = container.clientHeight * 0.7;
+                const svg = d3.select("#sim14-viz").append("svg").attr("width", w).attr("height", h);
+
+                const centerY = h / 2;
+                const inputX = w * 0.15;
+                const matrixX = w * 0.35;
+                const outputX = w * 0.7;
+
+                // Input vector (512-dim representation)
+                const inputGroup = svg.append("g").attr("class", "input-group");
+
+                inputGroup.append("rect")
+                    .attr("x", inputX - 30)
+                    .attr("y", centerY - 100)
+                    .attr("width", 60)
+                    .attr("height", 200)
+                    .attr("fill", "linear-gradient(180deg, var(--accent-code), var(--accent-purple))")
+                    .attr("rx", 6)
+                    .attr("stroke", "var(--accent-purple)")
+                    .attr("stroke-width", 2)
+                    .style("filter", "drop-shadow(0 0 10px var(--accent-purple))");
+
+                // Add flowing particles in input
+                const particleGroup = svg.append("g").attr("class", "particles");
+
+                function createParticles() {
+                    for (let i = 0; i < 8; i++) {
+                        particleGroup.append("circle")
+                            .attr("cx", inputX)
+                            .attr("cy", centerY - 90 + i * 25)
+                            .attr("r", 3)
+                            .attr("fill", "white")
+                            .attr("opacity", 0.8)
+                            .transition()
+                            .duration(2000)
+                            .ease(d3.easeLinear)
+                            .attr("cy", centerY + 90)
+                            .attr("opacity", 0)
+                            .on("end", function () {
+                                d3.select(this).remove();
+                            });
+                    }
+                }
+
+                setInterval(createParticles, 2000);
+                createParticles();
+
+                inputGroup.append("text")
+                    .text("Input")
+                    .attr("x", inputX)
+                    .attr("y", centerY + 120)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "1rem")
+                    .attr("font-weight", "bold");
+
+                inputGroup.append("text")
+                    .text("(512-dim)")
+                    .attr("x", inputX)
+                    .attr("y", centerY + 140)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "var(--text-muted)")
+                    .attr("font-size", "0.85rem");
+
+                // Projection matrices and outputs
+                const projections = [
+                    { name: "Query", symbol: "Wq", color: "#ef4444", yOffset: -150 },
+                    { name: "Key", symbol: "Wk", color: "#22c55e", yOffset: 0 },
+                    { name: "Value", symbol: "Wv", color: "#3b82f6", yOffset: 150 }
+                ];
+
+                projections.forEach((proj, idx) => {
+                    const yPos = centerY + proj.yOffset;
+
+                    // Matrix box
+                    const matrixGroup = svg.append("g")
+                        .attr("class", `matrix-${idx}`)
+                        .style("cursor", "pointer");
+
+                    matrixGroup.append("rect")
+                        .attr("x", matrixX - 50)
+                        .attr("y", yPos - 40)
+                        .attr("width", 100)
+                        .attr("height", 80)
+                        .attr("fill", "var(--bg-elevated)")
+                        .attr("stroke", proj.color)
+                        .attr("stroke-width", 2)
+                        .attr("rx", 8)
+                        .attr("class", `matrix-box-${idx}`)
+                        .style("transition", "all 0.3s ease");
+
+                    // Matrix grid pattern
+                    for (let i = 0; i < 6; i++) {
+                        for (let j = 0; j < 6; j++) {
+                            matrixGroup.append("rect")
+                                .attr("x", matrixX - 42 + j * 14)
+                                .attr("y", yPos - 32 + i * 11)
+                                .attr("width", 12)
+                                .attr("height", 9)
+                                .attr("fill", proj.color)
+                                .attr("opacity", 0.2 + Math.random() * 0.3);
+                        }
+                    }
+
+                    matrixGroup.append("text")
+                        .text(proj.symbol)
+                        .attr("x", matrixX)
+                        .attr("y", yPos + 60)
+                        .attr("text-anchor", "middle")
+                        .attr("fill", proj.color)
+                        .attr("font-size", "1.2rem")
+                        .attr("font-weight", "bold");
+
+                    // Output vector
+                    const outputGroup = svg.append("g")
+                        .attr("class", `output-${idx}`)
+                        .attr("opacity", 0);
+
+                    outputGroup.append("rect")
+                        .attr("x", outputX - 25)
+                        .attr("y", yPos - 30)
+                        .attr("width", 50)
+                        .attr("height", 60)
+                        .attr("fill", proj.color)
+                        .attr("rx", 6)
+                        .attr("stroke", proj.color)
+                        .attr("stroke-width", 2)
+                        .style("filter", `drop-shadow(0 0 10px ${proj.color})`);
+
+                    outputGroup.append("text")
+                        .text(proj.name)
+                        .attr("x", outputX)
+                        .attr("y", yPos + 50)
+                        .attr("text-anchor", "middle")
+                        .attr("fill", proj.color)
+                        .attr("font-size", "1rem")
+                        .attr("font-weight", "bold");
+
+                    outputGroup.append("text")
+                        .text("(64-dim)")
+                        .attr("x", outputX)
+                        .attr("y", yPos + 68)
+                        .attr("text-anchor", "middle")
+                        .attr("fill", "var(--text-muted)")
+                        .attr("font-size", "0.8rem");
+
+                    // Click interaction
+                    matrixGroup.on("click", function () {
+                        // Reset all
+                        svg.selectAll(".connection-line").remove();
+                        svg.selectAll(".dot-product-particles").remove();
+                        projections.forEach((_, i) => {
+                            svg.select(`.output-${i}`).transition().duration(300).attr("opacity", 0);
+                            svg.select(`.matrix-box-${i}`).attr("stroke-width", 2);
+                        });
+
+                        // Highlight selected matrix
+                        d3.select(`.matrix-box-${idx}`)
+                            .transition()
+                            .duration(200)
+                            .attr("stroke-width", 4)
+                            .style("filter", `drop-shadow(0 0 15px ${proj.color})`);
+
+                        // Show connection line
+                        const line = svg.append("line")
+                            .attr("class", "connection-line")
+                            .attr("x1", inputX + 30)
+                            .attr("y1", centerY)
+                            .attr("x2", inputX + 30)
+                            .attr("y2", centerY)
+                            .attr("stroke", proj.color)
+                            .attr("stroke-width", 3)
+                            .attr("opacity", 0.6)
+                            .style("filter", `drop-shadow(0 0 5px ${proj.color})`);
+
+                        line.transition()
+                            .duration(400)
+                            .attr("x2", matrixX - 50)
+                            .attr("y2", yPos);
+
+                        // Animate dot product particles
+                        setTimeout(() => {
+                            for (let i = 0; i < 12; i++) {
+                                svg.append("circle")
+                                    .attr("class", "dot-product-particles")
+                                    .attr("cx", matrixX)
+                                    .attr("cy", yPos)
+                                    .attr("r", 4)
+                                    .attr("fill", proj.color)
+                                    .attr("opacity", 0.8)
+                                    .transition()
+                                    .delay(i * 40)
+                                    .duration(600)
+                                    .ease(d3.easeCubicOut)
+                                    .attr("cx", outputX)
+                                    .attr("cy", yPos)
+                                    .attr("opacity", 0)
+                                    .remove();
+                            }
+                        }, 400);
+
+                        // Show output
+                        setTimeout(() => {
+                            svg.select(`.output-${idx}`)
+                                .transition()
+                                .duration(400)
+                                .attr("opacity", 1);
+
+                            document.getElementById('sim14-info').innerHTML = `
+                                <span style="color:${proj.color}; font-weight:bold;">${proj.name}</span> = 
+                                Input (512-dim) × ${proj.symbol} (512×64) = 
+                                <span style="color:${proj.color}; font-weight:bold;">${proj.name} Vector (64-dim)</span>
+                            `;
+                        }, 800);
+                    });
+
+                    // Hover effect
+                    matrixGroup.on("mouseenter", function () {
+                        d3.select(this).select("rect")
+                            .transition()
+                            .duration(200)
+                            .attr("stroke-width", 3)
+                            .style("filter", `drop-shadow(0 0 10px ${proj.color})`);
+                    });
+
+                    matrixGroup.on("mouseleave", function () {
+                        if (d3.select(`.matrix-box-${idx}`).attr("stroke-width") != 4) {
+                            d3.select(this).select("rect")
+                                .transition()
+                                .duration(200)
+                                .attr("stroke-width", 2)
+                                .style("filter", "none");
+                        }
+                    });
+                });
+
+                // Initial instruction
+                document.getElementById('sim14-info').innerText = "Click on any matrix (Wq, Wk, or Wv) to see the projection";
             },
 
-            'sim-15': (container) => { // Self-Attention
+            'sim-15': (container) => { // Self-Attention - Enhanced
                 container.innerHTML = `
                     <div style="height:100%; display:flex; flex-direction:column;">
-                        <div style="display:flex; justify-content:space-around; padding:20px;" id="sim15-tokens">
-                            <div class="attn-token" data-id="0" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">The</div>
-                            <div class="attn-token" data-id="1" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">animal</div>
-                            <div class="attn-token" data-id="2" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">didn't</div>
-                            <div class="attn-token" data-id="3" style="padding:10px; border:2px solid var(--text-primary); cursor:pointer;">cross</div>
+                        <div style="text-align:center; padding:10px; color:var(--text-secondary); font-size:1.2rem;">
+                            Click any word to see its attention pattern
                         </div>
-                        <div id="sim15-viz" style="flex:1; width:100%;"></div>
+                        <div style="display:flex; justify-content:space-around; padding:20px; flex-wrap:wrap; gap:15px;" id="sim15-tokens">
+                            <div class="attn-token" data-id="0" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">The</div>
+                            <div class="attn-token" data-id="1" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">animal</div>
+                            <div class="attn-token" data-id="2" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">didn't</div>
+                            <div class="attn-token" data-id="3" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">cross</div>
+                            <div class="attn-token" data-id="4" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">the</div>
+                            <div class="attn-token" data-id="5" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">street</div>
+                            <div class="attn-token" data-id="6" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">because</div>
+                            <div class="attn-token" data-id="7" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">it</div>
+                            <div class="attn-token" data-id="8" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">was</div>
+                            <div class="attn-token" data-id="9" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">too</div>
+                            <div class="attn-token" data-id="10" style="padding:12px 20px; border:2px solid var(--text-primary); cursor:pointer; border-radius:8px; font-size:1.3rem; transition:all 0.3s ease; background:var(--glass-surface);">tired</div>
+                        </div>
+                        <div id="sim15-viz" style="flex:1; width:100%; position:relative;"></div>
                     </div>
                  `;
 
                 const w = container.clientWidth;
-                const h = container.clientHeight * 0.7;
+                const h = container.clientHeight * 0.6;
                 const svg = d3.select("#sim15-viz").append("svg").attr("width", w).attr("height", h);
 
-                const tokens = ["The", "animal", "didn't", "cross"];
-                const x = d3.scalePoint().domain([0, 1, 2, 3]).range([w * 0.1, w * 0.9]);
+                const tokens = ["The", "animal", "didn't", "cross", "the", "street", "because", "it", "was", "too", "tired"];
+                const numTokens = tokens.length;
+                const x = d3.scalePoint().domain(d3.range(numTokens)).range([w * 0.05, w * 0.95]);
 
-                // Attention Matrix (Mock)
+                // Realistic Attention Matrix
                 const attn = [
-                    [0.8, 0.1, 0.05, 0.05],
-                    [0.1, 0.7, 0.1, 0.1],
-                    [0.05, 0.1, 0.8, 0.05],
-                    [0.0, 0.05, 0.05, 0.9]
+                    [0.70, 0.15, 0.05, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01], // The
+                    [0.10, 0.60, 0.10, 0.05, 0.03, 0.03, 0.03, 0.03, 0.01, 0.01, 0.01], // animal
+                    [0.05, 0.20, 0.50, 0.15, 0.03, 0.02, 0.02, 0.01, 0.01, 0.01, 0.00], // didn't
+                    [0.02, 0.10, 0.25, 0.45, 0.05, 0.08, 0.02, 0.01, 0.01, 0.01, 0.00], // cross
+                    [0.03, 0.05, 0.03, 0.10, 0.60, 0.15, 0.02, 0.01, 0.01, 0.00, 0.00], // the
+                    [0.01, 0.05, 0.05, 0.15, 0.15, 0.50, 0.05, 0.02, 0.01, 0.01, 0.00], // street
+                    [0.01, 0.03, 0.10, 0.05, 0.02, 0.05, 0.60, 0.08, 0.03, 0.02, 0.01], // because
+                    [0.02, 0.45, 0.05, 0.03, 0.02, 0.05, 0.08, 0.15, 0.05, 0.03, 0.07], // it (attends to "animal" and "tired")
+                    [0.01, 0.03, 0.05, 0.02, 0.01, 0.02, 0.10, 0.15, 0.50, 0.08, 0.03], // was
+                    [0.01, 0.02, 0.02, 0.01, 0.01, 0.01, 0.05, 0.05, 0.10, 0.60, 0.12], // too
+                    [0.01, 0.08, 0.02, 0.01, 0.01, 0.01, 0.03, 0.10, 0.05, 0.15, 0.53]  // tired
                 ];
 
+                // Color scale from blue (low) to amber (high)
+                const colorScale = d3.scaleLinear()
+                    .domain([0, 0.5, 1])
+                    .range(["#38bdf8", "#fbbf24", "#f59e0b"]);
+
+                // Create groups for paths and labels
+                const pathsGroup = svg.append("g").attr("class", "paths-group");
+                const labelsGroup = svg.append("g").attr("class", "labels-group");
+
                 const update = (selectedIdx) => {
-                    svg.selectAll("*").remove();
+                    // Smooth transition duration
+                    const t = d3.transition().duration(300).ease(d3.easeCubicInOut);
 
-                    // Draw connections
-                    tokens.forEach((t, i) => {
+                    // Remove old paths and labels
+                    pathsGroup.selectAll("*").transition(t).attr("opacity", 0).remove();
+                    labelsGroup.selectAll("*").transition(t).attr("opacity", 0).remove();
+
+                    // Get actual positions of word tokens from DOM
+                    const tokenElements = document.querySelectorAll('.attn-token');
+                    const tokenPositions = Array.from(tokenElements).map(el => {
+                        const rect = el.getBoundingClientRect();
+                        const svgRect = svg.node().getBoundingClientRect();
+                        return {
+                            x: rect.left + rect.width / 2 - svgRect.left,
+                            y: rect.top + rect.height - svgRect.top + 10 // Bottom of token + 10px gap
+                        };
+                    });
+
+                    // Draw curved Bézier arcs for attention
+                    tokens.forEach((token, i) => {
                         const weight = attn[selectedIdx][i];
-                        if (weight > 0.01) {
-                            svg.append("path")
-                                .attr("d", `M${x(selectedIdx)},${h * 0.1} Q${(x(selectedIdx) + x(i)) / 2},${h * 0.5} ${x(i)},${h * 0.1}`)
-                                .attr("fill", "none")
-                                .attr("stroke", "var(--accent-amber)")
-                                .attr("stroke-width", weight * 10)
-                                .attr("opacity", weight);
 
-                            svg.append("text").text((weight * 100).toFixed(0) + "%")
-                                .attr("x", (x(selectedIdx) + x(i)) / 2).attr("y", h * 0.5 + 15)
-                                .attr("text-anchor", "middle").attr("fill", "var(--accent-amber)");
+                        if (weight > 0.01) {
+                            const startX = tokenPositions[selectedIdx].x;
+                            const endX = tokenPositions[i].x;
+                            const startY = tokenPositions[selectedIdx].y;
+                            const endY = tokenPositions[i].y;
+
+                            // Control point for Bézier curve (higher arc for longer distances)
+                            const distance = Math.abs(endX - startX);
+                            const arcHeight = 100 + (distance / w) * 80; // Adjusted for better visibility
+                            const controlX = (startX + endX) / 2;
+                            const controlY = Math.max(startY, endY) + arcHeight;
+
+                            // Create curved path
+                            const path = pathsGroup.append("path")
+                                .attr("d", `M${startX},${startY} Q${controlX},${controlY} ${endX},${endY}`)
+                                .attr("fill", "none")
+                                .attr("stroke", colorScale(weight))
+                                .attr("stroke-width", Math.max(2, weight * 15))
+                                .attr("opacity", 0)
+                                .attr("stroke-linecap", "round")
+                                .style("filter", `drop-shadow(0 0 ${weight * 10}px ${colorScale(weight)})`);
+
+                            // Animate path appearance
+                            path.transition(t).attr("opacity", Math.max(0.4, weight));
+
+                            // Add percentage label on arc (only for significant weights)
+                            if (weight > 0.05) {
+                                const labelX = controlX;
+                                const labelY = controlY + 20;
+
+                                const label = labelsGroup.append("text")
+                                    .text((weight * 100).toFixed(0) + "%")
+                                    .attr("x", labelX)
+                                    .attr("y", labelY)
+                                    .attr("text-anchor", "middle")
+                                    .attr("fill", colorScale(weight))
+                                    .attr("font-size", "1.1rem")
+                                    .attr("font-weight", "bold")
+                                    .attr("opacity", 0)
+                                    .style("text-shadow", `0 0 10px ${colorScale(weight)}`);
+
+                                label.transition(t).delay(100).attr("opacity", 1);
+                            }
                         }
                     });
 
+                    // Update token styling
                     document.querySelectorAll('.attn-token').forEach((el, i) => {
-                        el.style.borderColor = (i === selectedIdx) ? "var(--accent-amber)" : "var(--text-primary)";
-                        el.style.color = (i === selectedIdx) ? "var(--accent-amber)" : "var(--text-primary)";
+                        const isSelected = i === selectedIdx;
+                        const weight = attn[selectedIdx][i];
+
+                        if (isSelected) {
+                            el.style.borderColor = "var(--accent-amber)";
+                            el.style.color = "var(--accent-amber)";
+                            el.style.background = "rgba(251, 191, 36, 0.2)";
+                            el.style.transform = "scale(1.1)";
+                            el.style.boxShadow = "0 0 20px rgba(251, 191, 36, 0.5)";
+                        } else if (weight > 0.1) {
+                            // Highlight strongly attended tokens
+                            el.style.borderColor = colorScale(weight);
+                            el.style.color = colorScale(weight);
+                            el.style.background = `rgba(251, 191, 36, ${weight * 0.3})`;
+                            el.style.transform = "scale(1.05)";
+                            el.style.boxShadow = `0 0 10px ${colorScale(weight)}`;
+                        } else {
+                            el.style.borderColor = "var(--text-primary)";
+                            el.style.color = "var(--text-primary)";
+                            el.style.background = "var(--glass-surface)";
+                            el.style.transform = "scale(1)";
+                            el.style.boxShadow = "none";
+                        }
                     });
                 };
 
+                // Add hover effects
                 document.querySelectorAll('.attn-token').forEach(el => {
                     el.onclick = () => update(parseInt(el.dataset.id));
+                    el.onmouseenter = () => {
+                        if (!el.style.transform.includes("1.1")) {
+                            el.style.transform = "scale(1.05)";
+                        }
+                    };
+                    el.onmouseleave = () => {
+                        const idx = parseInt(el.dataset.id);
+                        const currentSelection = Array.from(document.querySelectorAll('.attn-token'))
+                            .findIndex(e => e.style.borderColor.includes("251, 191, 36"));
+
+                        if (idx !== currentSelection && attn[currentSelection]?.[idx] <= 0.1) {
+                            el.style.transform = "scale(1)";
+                        }
+                    };
                 });
-                update(0); // Default
+
+                // Start with "it" selected to show pronoun resolution
+                update(7);
             },
 
-            'sim-16': (container) => { // Multi-Head Attention
+            'sim-16': (container) => { // Multi-Head Attention - Enhanced
                 container.innerHTML = `
-                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-                        <button id="sim16-btn" style="padding:10px 20px; background:var(--accent-blue); border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:20px;">Run Multi-Head Attention</button>
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px;">
+                        <div style="text-align:center; margin-bottom:20px;">
+                            <h3 style="margin:0 0 10px 0; color:var(--accent-blue);">Multi-Head Attention (8 Heads)</h3>
+                            <p style="margin:0; color:var(--text-secondary); font-size:1.1rem;">Each head learns different patterns in parallel</p>
+                        </div>
+                        <button id="sim16-btn" style="padding:12px 30px; background:linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border:none; border-radius:8px; font-weight:bold; cursor:pointer; margin-bottom:30px; font-size:1.1rem; color:white; box-shadow:0 4px 15px rgba(56, 189, 248, 0.3); transition:all 0.3s ease;">
+                            ▶ Run Multi-Head Attention
+                        </button>
                         <div id="sim16-viz" style="width:100%; height:60%;"></div>
-                        <div id="sim16-desc" style="margin-top:20px; color:var(--text-secondary);">Waiting...</div>
+                        <div id="sim16-desc" style="margin-top:25px; color:var(--text-secondary); font-size:1.2rem; text-align:center; min-height:30px; font-weight:600;"></div>
                     </div>
                 `;
 
@@ -2583,58 +2925,220 @@ for batch in dataloader:
                 const svg = d3.select("#sim16-viz").append("svg").attr("width", w).attr("height", h);
 
                 const heads = 8;
-                const headW = w / (heads + 2);
+                const headW = (w * 0.8) / heads;
+                const startX = w * 0.1;
 
-                // Input
-                svg.append("rect").attr("x", w / 2 - 40).attr("y", h - 20).attr("width", 80).attr("height", 20).attr("fill", "white").attr("id", "sim16-in");
+                // Head colors and labels
+                const headInfo = [
+                    { color: "#ef4444", label: "Grammar" },
+                    { color: "#f59e0b", label: "Pronouns" },
+                    { color: "#eab308", label: "Local Context" },
+                    { color: "#22c55e", label: "Syntax" },
+                    { color: "#06b6d4", label: "Semantics" },
+                    { color: "#3b82f6", label: "Position" },
+                    { color: "#8b5cf6", label: "Entities" },
+                    { color: "#ec4899", label: "Relations" }
+                ];
 
-                // Heads
-                const headGroup = svg.selectAll(".head").data(d3.range(heads)).enter().append("g");
+                // Input box
+                const inputBox = svg.append("rect")
+                    .attr("x", w / 2 - 60)
+                    .attr("y", h - 40)
+                    .attr("width", 120)
+                    .attr("height", 35)
+                    .attr("fill", "var(--accent-blue)")
+                    .attr("rx", 6)
+                    .attr("stroke", "var(--accent-purple)")
+                    .attr("stroke-width", 2)
+                    .style("filter", "drop-shadow(0 0 10px var(--accent-blue))");
+
+                svg.append("text")
+                    .text("Input Vector")
+                    .attr("x", w / 2)
+                    .attr("y", h - 17)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "0.9rem")
+                    .attr("font-weight", "bold");
+
+                // Create head boxes
+                const headGroup = svg.selectAll(".head").data(d3.range(heads)).enter().append("g")
+                    .attr("class", "head");
+
                 headGroup.append("rect")
-                    .attr("x", (d, i) => (i + 1) * headW).attr("y", h / 2 - 20)
-                    .attr("width", headW - 10).attr("height", 40)
-                    .attr("fill", "var(--bg-elevated)").attr("stroke", "var(--accent-blue)");
+                    .attr("x", (d, i) => startX + i * headW + headW * 0.1)
+                    .attr("y", h / 2 - 35)
+                    .attr("width", headW * 0.8)
+                    .attr("height", 70)
+                    .attr("fill", "var(--bg-elevated)")
+                    .attr("stroke", (d, i) => headInfo[i].color)
+                    .attr("stroke-width", 2)
+                    .attr("rx", 8)
+                    .attr("class", "head-box");
 
-                headGroup.append("text").text((d, i) => `H${i + 1}`)
-                    .attr("x", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y", h / 2 + 5)
-                    .attr("text-anchor", "middle").attr("fill", "white").attr("font-size", "0.8rem");
+                headGroup.append("text")
+                    .text((d, i) => `H${i + 1}`)
+                    .attr("x", (d, i) => startX + i * headW + headW * 0.5)
+                    .attr("y", h / 2 - 5)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "1.1rem")
+                    .attr("font-weight", "bold");
 
-                // Output
-                svg.append("rect").attr("x", w / 2 - 40).attr("y", 0).attr("width", 80).attr("height", 20).attr("fill", "var(--accent-green)").attr("opacity", 0).attr("id", "sim16-out");
+                headGroup.append("text")
+                    .text((d, i) => headInfo[i].label)
+                    .attr("x", (d, i) => startX + i * headW + headW * 0.5)
+                    .attr("y", h / 2 + 15)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", (d, i) => headInfo[i].color)
+                    .attr("font-size", "0.75rem")
+                    .attr("class", "head-label");
 
+                // Output box (wider to fit text)
+                const outputBox = svg.append("rect")
+                    .attr("x", w / 2 - 80)
+                    .attr("y", 20)
+                    .attr("width", 160)
+                    .attr("height", 35)
+                    .attr("fill", "var(--accent-green)")
+                    .attr("rx", 6)
+                    .attr("opacity", 0)
+                    .attr("stroke", "var(--accent-amber)")
+                    .attr("stroke-width", 2)
+                    .style("filter", "drop-shadow(0 0 10px var(--accent-green))");
+
+                svg.append("text")
+                    .text("Concatenated Output")
+                    .attr("x", w / 2)
+                    .attr("y", 43)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "0.8rem")
+                    .attr("font-weight", "bold")
+                    .attr("opacity", 0)
+                    .attr("id", "output-label");
+
+                // Animation function
                 document.getElementById('sim16-btn').onclick = () => {
-                    // Split
+                    // Reset
                     svg.selectAll(".split-line").remove();
-                    svg.selectAll(".split-line").data(d3.range(heads)).enter().append("line")
-                        .attr("class", "split-line")
-                        .attr("x1", w / 2).attr("y1", h - 20)
-                        .attr("x2", w / 2).attr("y2", h - 20)
-                        .attr("stroke", "var(--accent-blue)")
-                        .transition().duration(500)
-                        .attr("x2", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y2", h / 2 + 20);
+                    svg.selectAll(".merge-line").remove();
+                    outputBox.attr("opacity", 0);
+                    d3.select("#output-label").attr("opacity", 0);
+                    document.getElementById('sim16-desc').innerText = "";
 
-                    setTimeout(() => {
-                        // Process
-                        headGroup.select("rect").transition().duration(200).attr("fill", "var(--accent-amber)")
-                            .transition().duration(200).attr("fill", "var(--bg-elevated)");
+                    // Phase 1: Split input to heads (staggered)
+                    document.getElementById('sim16-desc').innerText = "Splitting input into 8 parallel streams...";
 
-                        document.getElementById('sim16-desc').innerText = "Parallel Processing: Grammar, Relationships, Context...";
-
+                    d3.range(heads).forEach((d, i) => {
                         setTimeout(() => {
-                            // Merge
-                            svg.selectAll(".merge-line").remove();
-                            svg.selectAll(".merge-line").data(d3.range(heads)).enter().append("line")
-                                .attr("class", "merge-line")
-                                .attr("x1", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y1", h / 2 - 20)
-                                .attr("x2", (d, i) => (i + 1) * headW + (headW - 10) / 2).attr("y2", h / 2 - 20)
-                                .attr("stroke", "var(--accent-green)")
-                                .transition().duration(500)
-                                .attr("x2", w / 2).attr("y2", 20);
+                            svg.append("line")
+                                .attr("class", "split-line")
+                                .attr("x1", w / 2)
+                                .attr("y1", h - 40)
+                                .attr("x2", w / 2)
+                                .attr("y2", h - 40)
+                                .attr("stroke", headInfo[i].color)
+                                .attr("stroke-width", 3)
+                                .attr("opacity", 0.8)
+                                .style("filter", `drop-shadow(0 0 5px ${headInfo[i].color})`)
+                                .transition()
+                                .duration(400)
+                                .ease(d3.easeCubicOut)
+                                .attr("x2", startX + i * headW + headW * 0.5)
+                                .attr("y2", h / 2 + 35);
+                        }, i * 100);
+                    });
 
-                            d3.select("#sim16-out").transition().delay(500).duration(200).attr("opacity", 1);
-                            document.getElementById('sim16-desc').innerText = "Concatenated & Projected Result";
-                        }, 800);
-                    }, 600);
+                    // Phase 2: Process in each head (staggered pulses)
+                    setTimeout(() => {
+                        document.getElementById('sim16-desc').innerText = "Processing in parallel: Grammar, Pronouns, Context, Syntax...";
+
+                        d3.range(heads).forEach((d, i) => {
+                            setTimeout(() => {
+                                // Pulse animation
+                                d3.selectAll(".head-box")
+                                    .filter((_, idx) => idx === i)
+                                    .transition()
+                                    .duration(200)
+                                    .attr("fill", headInfo[i].color)
+                                    .attr("stroke-width", 4)
+                                    .style("filter", `drop-shadow(0 0 15px ${headInfo[i].color})`)
+                                    .transition()
+                                    .duration(300)
+                                    .attr("fill", "var(--bg-elevated)")
+                                    .attr("stroke-width", 2)
+                                    .style("filter", "none");
+
+                                // Brighten label
+                                d3.selectAll(".head-label")
+                                    .filter((_, idx) => idx === i)
+                                    .transition()
+                                    .duration(200)
+                                    .attr("font-size", "0.85rem")
+                                    .attr("font-weight", "bold")
+                                    .transition()
+                                    .duration(300)
+                                    .attr("font-size", "0.75rem")
+                                    .attr("font-weight", "normal");
+                            }, i * 100);
+                        });
+                    }, 1000);
+
+                    // Phase 3: Merge outputs (staggered)
+                    setTimeout(() => {
+                        document.getElementById('sim16-desc').innerText = "Concatenating outputs from all heads...";
+
+                        d3.range(heads).forEach((d, i) => {
+                            setTimeout(() => {
+                                svg.append("line")
+                                    .attr("class", "merge-line")
+                                    .attr("x1", startX + i * headW + headW * 0.5)
+                                    .attr("y1", h / 2 - 35)
+                                    .attr("x2", startX + i * headW + headW * 0.5)
+                                    .attr("y2", h / 2 - 35)
+                                    .attr("stroke", headInfo[i].color)
+                                    .attr("stroke-width", 3)
+                                    .attr("opacity", 0.8)
+                                    .style("filter", `drop-shadow(0 0 5px ${headInfo[i].color})`)
+                                    .transition()
+                                    .duration(500)
+                                    .ease(d3.easeCubicIn)
+                                    .attr("x2", w / 2)
+                                    .attr("y2", 55);
+                            }, i * 80);
+                        });
+                    }, 2200);
+
+                    // Phase 4: Show output
+                    setTimeout(() => {
+                        outputBox.transition()
+                            .duration(400)
+                            .attr("opacity", 1);
+
+                        d3.select("#output-label").transition()
+                            .duration(400)
+                            .attr("opacity", 1);
+
+                        document.getElementById('sim16-desc').innerText = "✓ Multi-head attention complete! Each head captured different patterns.";
+                        document.getElementById('sim16-desc').style.color = "var(--accent-green)";
+                    }, 3000);
+
+                    // Reset description color
+                    setTimeout(() => {
+                        document.getElementById('sim16-desc').style.color = "var(--text-secondary)";
+                    }, 5000);
+                };
+
+                // Hover effect on button
+                const btn = document.getElementById('sim16-btn');
+                btn.onmouseenter = () => {
+                    btn.style.transform = "translateY(-2px)";
+                    btn.style.boxShadow = "0 6px 20px rgba(56, 189, 248, 0.5)";
+                };
+                btn.onmouseleave = () => {
+                    btn.style.transform = "translateY(0)";
+                    btn.style.boxShadow = "0 4px 15px rgba(56, 189, 248, 0.3)";
                 };
             },
 
@@ -2718,20 +3222,147 @@ for batch in dataloader:
                 };
             },
 
-            'sim-19': (container) => { // Transformer Block
+            'sim-19': (container) => { // Transformer Block - Animated
                 container.innerHTML = `
-                    <div style="height:100%; display:flex; align-items:center; justify-content:center;">
-                        <div style="position:relative; width:300px; height:400px; border:2px solid var(--text-muted); border-radius:12px; padding:20px; display:flex; flex-direction:column; gap:10px; background:var(--bg-surface);">
-                            <div style="text-align:center; color:var(--text-secondary); margin-bottom:10px;">Transformer Block x N</div>
-                            
-                            <div style="background:var(--accent-blue); padding:15px; text-align:center; border-radius:6px; color:black; font-weight:bold;">Multi-Head Attention</div>
-                            <div style="background:var(--bg-elevated); padding:10px; text-align:center; border-radius:6px; border:1px solid var(--accent-code);">Add & Norm</div>
-                            
-                            <div style="background:var(--accent-amber); padding:15px; text-align:center; border-radius:6px; color:black; font-weight:bold;">Feed Forward</div>
-                            <div style="background:var(--bg-elevated); padding:10px; text-align:center; border-radius:6px; border:1px solid var(--accent-code);">Add & Norm</div>
+                    <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;">
+                        <div style="text-align:center;">
+                            <h3 style="margin:0 0 5px 0; color:var(--accent-blue); font-size:1.8rem;">Transformer Block</h3>
+                            <p style="margin:0; color:var(--text-secondary); font-size:1rem;">Building block repeated N times</p>
                         </div>
+                        <button id="sim19-btn" style="padding:10px 25px; background:linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:1rem; color:white; box-shadow:0 4px 15px rgba(56, 189, 248, 0.3); transition:all 0.3s ease;">
+                            ▶ Animate Flow
+                        </button>
+                        <div style="display:flex; gap:40px; align-items:center;">
+                            <div style="display:flex; flex-direction:column; gap:15px; width:280px;">
+                                <div id="block-mha" style="background:linear-gradient(135deg, #3b82f6, #2563eb); padding:18px; text-align:center; border-radius:10px; color:white; font-weight:bold; font-size:1.1rem; transition:all 0.4s ease; box-shadow:0 4px 15px rgba(59, 130, 246, 0.4);">
+                                    Multi-Head<br>Attention
+                                </div>
+                                <div id="block-norm1" style="background:var(--bg-elevated); padding:12px; text-align:center; border-radius:8px; border:2px solid #8b5cf6; color:var(--text-primary); font-size:0.95rem; transition:all 0.3s ease;">
+                                    Add & Normalize
+                                </div>
+                                <div id="block-ff" style="background:linear-gradient(135deg, #f59e0b, #d97706); padding:18px; text-align:center; border-radius:10px; color:white; font-weight:bold; font-size:1.1rem; transition:all 0.4s ease; box-shadow:0 4px 15px rgba(245, 158, 11, 0.4);">
+                                    Feed Forward<br>Network
+                                </div>
+                                <div id="block-norm2" style="background:var(--bg-elevated); padding:12px; text-align:center; border-radius:8px; border:2px solid #10b981; color:var(--text-primary); font-size:0.95rem; transition:all 0.3s ease;">
+                                    Add & Normalize
+                                </div>
+                            </div>
+                            <div id="sim19-viz" style="width:200px; height:400px;"></div>
+                        </div>
+                        <div id="sim19-status" style="color:var(--text-secondary); font-size:1rem; text-align:center; min-height:25px; font-weight:600;"></div>
                     </div>
                 `;
+
+                // Create SVG for arrow animation
+                const svg = d3.select("#sim19-viz").append("svg").attr("width", 200).attr("height", 400);
+
+                // Arrow path
+                const arrowGroup = svg.append("g");
+                const arrowPath = arrowGroup.append("path")
+                    .attr("d", "M100,20 L100,380")
+                    .attr("stroke", "var(--accent-blue)")
+                    .attr("stroke-width", 4)
+                    .attr("fill", "none")
+                    .attr("stroke-dasharray", "10,5")
+                    .attr("opacity", 0.3);
+
+                // Animated particle
+                const particle = arrowGroup.append("circle")
+                    .attr("r", 8)
+                    .attr("fill", "var(--accent-green)")
+                    .attr("cx", 100)
+                    .attr("cy", 20)
+                    .attr("opacity", 0)
+                    .style("filter", "drop-shadow(0 0 10px var(--accent-green))");
+
+                // Labels
+                const labels = [
+                    { y: 70, text: "Attention" },
+                    { y: 160, text: "Normalize" },
+                    { y: 250, text: "Transform" },
+                    { y: 340, text: "Normalize" }
+                ];
+
+                labels.forEach(label => {
+                    svg.append("text")
+                        .text(label.text)
+                        .attr("x", 100)
+                        .attr("y", label.y)
+                        .attr("text-anchor", "middle")
+                        .attr("fill", "var(--text-muted)")
+                        .attr("font-size", "0.85rem")
+                        .attr("opacity", 0.5);
+                });
+
+                const blocks = [
+                    { id: 'block-mha', name: 'Multi-Head Attention', color: '#3b82f6', y: 70, duration: 1000 },
+                    { id: 'block-norm1', name: 'Add & Normalize', color: '#8b5cf6', y: 160, duration: 500 },
+                    { id: 'block-ff', name: 'Feed Forward', color: '#f59e0b', y: 250, duration: 1000 },
+                    { id: 'block-norm2', name: 'Add & Normalize', color: '#10b981', y: 340, duration: 500 }
+                ];
+
+                document.getElementById('sim19-btn').onclick = () => {
+                    // Reset
+                    blocks.forEach(block => {
+                        const el = document.getElementById(block.id);
+                        el.style.transform = 'scale(1)';
+                        el.style.filter = 'none';
+                    });
+                    particle.attr("opacity", 0).attr("cy", 20);
+                    document.getElementById('sim19-status').innerText = '';
+
+                    // Animate particle and blocks
+                    let delay = 300;
+
+                    blocks.forEach((block, idx) => {
+                        setTimeout(() => {
+                            const el = document.getElementById(block.id);
+
+                            // Move particle to this block
+                            particle
+                                .attr("opacity", 1)
+                                .attr("fill", block.color)
+                                .transition()
+                                .duration(400)
+                                .ease(d3.easeCubicInOut)
+                                .attr("cy", block.y);
+
+                            // Pulse block
+                            el.style.transform = 'scale(1.08)';
+                            el.style.filter = `drop-shadow(0 0 25px ${block.color})`;
+
+                            // Update status
+                            document.getElementById('sim19-status').innerText = `⚡ ${block.name}`;
+                            document.getElementById('sim19-status').style.color = block.color;
+
+                            // Reset block after duration
+                            setTimeout(() => {
+                                el.style.transform = 'scale(1)';
+                                el.style.filter = 'none';
+                            }, block.duration - 200);
+                        }, delay);
+
+                        delay += block.duration;
+                    });
+
+                    // Final message
+                    setTimeout(() => {
+                        particle.transition().duration(300).attr("opacity", 0);
+                        document.getElementById('sim19-status').innerText = '✓ Transformer block complete!';
+                        document.getElementById('sim19-status').style.color = 'var(--accent-green)';
+                    }, delay + 200);
+                };
+
+                // Hover effect on button
+                const btn = document.getElementById('sim19-btn');
+                btn.onmouseenter = () => {
+                    btn.style.transform = 'translateY(-2px)';
+                    btn.style.boxShadow = '0 6px 20px rgba(56, 189, 248, 0.5)';
+                };
+                btn.onmouseleave = () => {
+                    btn.style.transform = 'translateY(0)';
+                    btn.style.boxShadow = '0 4px 15px rgba(56, 189, 248, 0.3)';
+                };
             },
 
             'sim-20': (container) => { // Causal Masking
