@@ -1,18 +1,51 @@
+#!/usr/bin/env python3
+"""
+Generate presentation images using Google's Nano Banana / Nano Banana Pro models.
+
+Uses the new `google-genai` SDK (Gen AI SDK) instead of the legacy `google-generativeai`.
+
+Models:
+  - Nano Banana:     gemini-2.5-flash-image       (fast, efficient, 1024px)
+  - Nano Banana Pro: gemini-3-pro-image-preview    (professional, reasoning-enhanced, up to 4K)
+
+Install:
+  pip install google-genai Pillow
+
+Usage:
+  python generate_images.py --api-key YOUR_KEY
+  python generate_images.py --api-key YOUR_KEY --model nano-banana        # fast model
+  python generate_images.py --api-key YOUR_KEY --model nano-banana-pro    # pro model (default)
+  python generate_images.py --api-key YOUR_KEY --slides 1,3,6 --force
+  python generate_images.py --dry-run
+"""
 
 import os
 import argparse
 import time
-import json
 import logging
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-import google.generativeai as genai
+
+# New Gen AI SDK
+from google import genai
+from google.genai import types
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Model mapping
+# ---------------------------------------------------------------------------
+MODELS = {
+    "nano-banana":     "gemini-2.5-flash-image",
+    "nano-banana-pro": "gemini-3-pro-image-preview",
+}
+DEFAULT_MODEL = "nano-banana-pro"
+
+# ---------------------------------------------------------------------------
 # Global Style Suffix
+# ---------------------------------------------------------------------------
 STYLE_SUFFIX = """
 Style: Modern digital illustration, clean vector-like aesthetic with depth. 
 Color palette: deep navy (#0f172a) and charcoal backgrounds, sky blue (#38bdf8) 
@@ -21,6 +54,9 @@ suitable for a tech conference presentation. No text or labels in the image.
 Widescreen 16:9 aspect ratio composition.
 """
 
+# ---------------------------------------------------------------------------
+# Image Specifications
+# ---------------------------------------------------------------------------
 IMAGE_SPECS = [
     {
         "filename": "slide_01_title.png",
@@ -54,7 +90,7 @@ IMAGE_SPECS = [
         computing. Warm industrial lighting, steampunk-adjacent aesthetic."""
     },
     {
-        "filename": "slide_04_statistics_founders.png",  
+        "filename": "slide_04_statistics_founders.png",
         "prompt": """An elegant composition showing the key figures of statistical 
         history arranged around a central bell curve visualization. Silhouettes or 
         stylized portraits of Gauss, Bayes, Bernoulli, and Laplace positioned at 
@@ -195,16 +231,20 @@ IMAGE_SPECS = [
         exciting — a hackathon in full swing. Warm collaborative lighting. 
         Google Colab notebooks visible on screens. A countdown timer adds urgency. 
         Team energy, focused concentration, competitive drive."""
-    }
+    },
 ]
 
-def create_placeholder(filename, directory="images"):
+
+# ---------------------------------------------------------------------------
+# Placeholder generator (unchanged, for --dry-run)
+# ---------------------------------------------------------------------------
+def create_placeholder(filename: str, directory: str = "images") -> None:
     """Creates a placeholder image using Pillow."""
     width, height = 1920, 1080
-    background_color = (15, 23, 42)  # #0f172a
+    background_color = (15, 23, 42)   # #0f172a
     text_color = (255, 255, 255)
-    subtext_color = (148, 163, 184) # #94a3b8
-    grid_color = (30, 41, 59) # #1e293b
+    subtext_color = (148, 163, 184)   # #94a3b8
+    grid_color = (30, 41, 59)         # #1e293b
 
     image = Image.new("RGB", (width, height), background_color)
     draw = ImageDraw.Draw(image)
@@ -215,53 +255,57 @@ def create_placeholder(filename, directory="images"):
         draw.line([(x, 0), (x, height)], fill=grid_color, width=1)
     for y in range(0, height, grid_size):
         draw.line([(0, y), (width, y)], fill=grid_color, width=1)
-    
+
     # Try to load a font, otherwise use default
-    try:
-        # Try a few common fonts
-        font_paths = [
-            "arial.ttf", "segoeui.ttf", "OpenSans-Regular.ttf", 
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        ]
-        font = None
-        for path in font_paths:
-            try: 
-                font = ImageFont.truetype(path, 80)
-                sub_font = ImageFont.truetype(path, 40)
-                break
-            except: continue
-            
-        if font is None: raise Exception("No font found")
-    except:
+    font = sub_font = None
+    font_paths = [
+        "arial.ttf", "segoeui.ttf", "OpenSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    for path in font_paths:
+        try:
+            font = ImageFont.truetype(path, 80)
+            sub_font = ImageFont.truetype(path, 40)
+            break
+        except Exception:
+            continue
+    if font is None:
         font = ImageFont.load_default()
         sub_font = ImageFont.load_default()
 
-    # Draw text
     title = filename.replace("slide_", "").replace(".png", "").replace("_", " ").title()
-    
-    # Center text
-    # basic centering for default font or pil usage
+
     try:
         _, _, w, h = draw.textbbox((0, 0), title, font=font)
         draw.text(((width - w) / 2, (height - h) / 2 - 40), title, font=font, fill=text_color)
-        
+
         subtext = "Image pending generation"
         _, _, w2, h2 = draw.textbbox((0, 0), subtext, font=sub_font)
         draw.text(((width - w2) / 2, (height - h) / 2 + 60), subtext, font=sub_font, fill=subtext_color)
-    except Exception as e:
-        # Fallback for old PIL versions
-        draw.text((width/2 - 200, height/2), title, fill=text_color)
-        draw.text((width/2 - 100, height/2 + 50), "Pending", fill=subtext_color)
+    except Exception:
+        draw.text((width / 2 - 200, height / 2), title, fill=text_color)
+        draw.text((width / 2 - 100, height / 2 + 50), "Pending", fill=subtext_color)
 
     filepath = Path(directory) / filename
     image.save(filepath)
     logger.info(f"Created placeholder: {filepath}")
 
-def generate_image(spec, api_key, directory="images", force=False, dry_run=False):
-    """Generates a single image using Gemini API."""
+
+# ---------------------------------------------------------------------------
+# Image generation using the NEW google-genai SDK
+# ---------------------------------------------------------------------------
+def generate_image(
+    spec: dict,
+    client: genai.Client,
+    model_name: str,
+    directory: str = "images",
+    force: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Generates a single image using the Nano Banana / Nano Banana Pro API."""
     filename = spec["filename"]
     filepath = Path(directory) / filename
-    
+
     if filepath.exists() and not force:
         logger.info(f"Skipping {filename} (exists)")
         return
@@ -272,105 +316,142 @@ def generate_image(spec, api_key, directory="images", force=False, dry_run=False
         return
 
     prompt = spec["prompt"] + "\n\n" + STYLE_SUFFIX
-    
-    logger.info(f"Generating {filename}...")
-    
+    logger.info(f"Generating {filename} with model {model_name}...")
+
     # Retry logic
     max_retries = 3
     base_delay = 2
-    
+
     for attempt in range(max_retries):
         try:
-            genai.configure(api_key=api_key)
-            # Use the correct model for image generation
-            model = genai.GenerativeModel('gemini-2.5-flash-image') 
-            
-            response = model.generate_content(
-                prompt
+            # -----------------------------------------------------------
+            # New Gen AI SDK call
+            # Key difference: we use client.models.generate_content()
+            # and must request IMAGE in response_modalities.
+            # -----------------------------------------------------------
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"],
+                ),
             )
-            
-            # Extract image
-            # Look for image part
-            if not response.parts:
-                raise Exception("No parts in response")
-                
-            img_part = None
+
+            # Extract the image part from the response
+            img_saved = False
             for part in response.parts:
-                # Actual implementation might vary based on latest library version structure
-                # This logic attempts to find the inline data
-                if hasattr(part, 'inline_data') and part.inline_data.mime_type.startswith('image/'):
-                    img_part = part
+                if part.inline_data is not None and part.inline_data.mime_type.startswith("image/"):
+                    img_data = part.inline_data.data
+                    with open(filepath, "wb") as f:
+                        f.write(img_data)
+                    logger.info(f"Successfully saved {filepath}")
+                    img_saved = True
                     break
-                # Fallback for checking if it's strictly an image object if library handles it differently
-            
-            if not img_part:
-               # Try accessing candidates if direct parts failed or check API specific response structure
-               if response.candidates and response.candidates[0].content.parts:
-                   for part in response.candidates[0].content.parts:
-                       if hasattr(part, 'inline_data') and part.inline_data.mime_type.startswith('image/'):
-                           img_part = part
-                           break
-            
-            if img_part:
-                img_data = img_part.inline_data.data
-                with open(filepath, "wb") as f:
-                    f.write(img_data)
-                logger.info(f"Successfully saved {filepath}")
+                elif hasattr(part, "as_image") and callable(part.as_image):
+                    # Convenience method in newer SDK versions
+                    try:
+                        image = part.as_image()
+                        image.save(str(filepath))
+                        logger.info(f"Successfully saved {filepath} (via as_image)")
+                        img_saved = True
+                        break
+                    except Exception:
+                        pass
+
+            if img_saved:
                 return
-            else:
-                raise Exception("No valid image found in response")
+
+            # If we got here, no image was found in the response
+            text_parts = [p.text for p in response.parts if p.text]
+            if text_parts:
+                logger.warning(f"Model returned text instead of image: {text_parts[0][:200]}")
+            raise Exception("No valid image found in response parts")
 
         except Exception as e:
-            logger.error(f"Attempt {attempt+1}/{max_retries} failed for {filename}: {str(e)}")
+            logger.error(f"Attempt {attempt + 1}/{max_retries} failed for {filename}: {e}")
             if attempt < max_retries - 1:
                 sleep_time = base_delay * (2 ** attempt)
+                logger.info(f"Retrying in {sleep_time}s...")
                 time.sleep(sleep_time)
-            
-    # If all retries fail, create placeholder
-    logger.warning(f"Failed to generate {filename}, creating placeholder.")
+
+    # All retries exhausted — create placeholder
+    logger.warning(f"Failed to generate {filename} after {max_retries} attempts, creating placeholder.")
     create_placeholder(filename, directory)
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Generate presentation images using Gemini.")
-    parser.add_argument("--api-key", help="Google API Key")
-    parser.add_argument("--slides", help="Comma-separated list of slide numbers to generate (e.g., 1,3,6)")
+    parser = argparse.ArgumentParser(
+        description="Generate presentation images using Google Nano Banana (Gemini image gen)."
+    )
+    parser.add_argument("--api-key", help="Google API Key (or set GOOGLE_API_KEY env var)")
+    parser.add_argument(
+        "--model",
+        choices=list(MODELS.keys()),
+        default=DEFAULT_MODEL,
+        help=f"Which Nano Banana model to use (default: {DEFAULT_MODEL})",
+    )
+    parser.add_argument(
+        "--slides",
+        help="Comma-separated list of slide numbers to generate (e.g., 1,3,6)",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing images")
     parser.add_argument("--dry-run", action="store_true", help="Create placeholders only")
-    
+    parser.add_argument("--delay", type=float, default=3.0, help="Delay between API calls in seconds (default: 3)")
+
     args = parser.parse_args()
-    
+
     api_key = args.api_key or os.environ.get("GOOGLE_API_KEY")
     if not api_key and not args.dry_run:
         logger.error("API Key must be provided via --api-key or GOOGLE_API_KEY env var (unless --dry-run)")
         return
 
+    # Resolve model string
+    model_name = MODELS[args.model]
+    logger.info(f"Using model: {args.model} → {model_name}")
+
+    # Create the Gen AI client
+    client = None
+    if not args.dry_run:
+        client = genai.Client(api_key=api_key)
+
     # Create images directory
     images_dir = Path("images")
     images_dir.mkdir(exist_ok=True)
-    
+
     # Filter slides if requested
     specs_to_process = IMAGE_SPECS
     if args.slides:
-        indices = [int(s.strip()) for s in args.slides.split(",")]
-        # Match filenames like slide_01...
-        filtered_specs = []
+        indices = {int(s.strip()) for s in args.slides.split(",")}
+        filtered = []
         for spec in IMAGE_SPECS:
             try:
-                # Extract number from filename "slide_01_title.png"
                 num = int(spec["filename"].split("_")[1])
                 if num in indices:
-                    filtered_specs.append(spec)
-            except:
+                    filtered.append(spec)
+            except (IndexError, ValueError):
                 pass
-        specs_to_process = filtered_specs
+        specs_to_process = filtered
 
     logger.info(f"Processing {len(specs_to_process)} images...")
 
-    for spec in specs_to_process:
-        generate_image(spec, api_key, directory="images", force=args.force, dry_run=args.dry_run)
-        if not args.dry_run:
-            # Polite delay between requests
-            time.sleep(2)
+    for i, spec in enumerate(specs_to_process):
+        generate_image(
+            spec,
+            client=client,
+            model_name=model_name,
+            directory="images",
+            force=args.force,
+            dry_run=args.dry_run,
+        )
+        # Polite delay between API requests (skip after last image)
+        if not args.dry_run and i < len(specs_to_process) - 1:
+            time.sleep(args.delay)
+
+    logger.info("Done!")
+
 
 if __name__ == "__main__":
     main()
